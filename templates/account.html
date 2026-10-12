@@ -13,16 +13,21 @@
         {% if active %}
           <h2>Подписка активна</h2>
           <p>До {{ user.paid_until | date }}</p>
+        {% elif not payments_on %}
+          <h2>Аккаунт создан</h2>
+          <p>Оплата и ключи откроются совсем скоро. Заходите в кабинет, чтобы не пропустить.</p>
         {% else %}
           <h2>Подписки нет</h2>
           <p>{% if user.paid_until %}Закончилась {{ user.paid_until | date }}. {% endif %}Оплатите, чтобы получить ключи.</p>
         {% endif %}
       </div>
-      <a class="btn {{ 'btn-ghost' if active }}" href="#plans">{{ 'Продлить' if active else 'Оформить' }}</a>
+      {% if payments_on %}<a class="btn {{ 'btn-ghost' if active }}" href="#plans">{{ 'Продлить' if active else 'Оформить' }}</a>{% endif %}
     </div>
 
     <h2 class="section-title" id="keys">Ключи</h2>
-    {% if active %}
+    {% if not keys_on %}
+      <div class="card empty">Выдача ключей скоро откроется.</div>
+    {% elif active %}
       <p class="muted" style="margin-top:6px">Один ключ на устройство, до {{ max_keys }} штук. После окончания подписки ключи отключаются.</p>
       <div class="keys">
         {% for k in keys %}
@@ -70,7 +75,7 @@
         <div class="per">{{ (p.price * 30 / p.days) | round | int }} ₽ в месяц</div>
         <form method="post" action="{{ url_for('pay', code=p.code) }}">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-          <button class="btn btn-block" type="submit">Оплатить</button>
+          {% if payments_on %}<button class="btn btn-block" type="submit">Оплатить</button>{% else %}<button class="btn btn-block" type="button" disabled>Скоро</button>{% endif %}
         </form>
       </div>
       {% endfor %}

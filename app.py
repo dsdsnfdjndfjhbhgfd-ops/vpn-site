@@ -53,6 +53,9 @@ MAX_KEYS = int(os.getenv("MAX_KEYS", "3"))
 PAYMENT = os.getenv("PAYMENT_PROVIDER", "test").strip().lower()
 # Статическая демо-версия для GitHub Pages (собирается build_demo.py)
 DEMO = os.getenv("DEMO") == "1"
+# Предзапуск: регистрация работает, а оплату и ключи можно временно выключить
+PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "1") == "1"
+KEYS_ENABLED = os.getenv("KEYS_ENABLED", "1") == "1"
 YK_SHOP = os.getenv("YOOKASSA_SHOP_ID", "")
 YK_SECRET = os.getenv("YOOKASSA_SECRET_KEY", "")
 ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
@@ -351,7 +354,8 @@ def too_many_attempts(key: str, limit: int = 10, window: int = 600) -> bool:
 @app.context_processor
 def inject():
     return {"csrf_token": csrf_token, "site_name": SITE_NAME, "plans": PLANS.values(),
-            "me": current_user(), "payment_mode": PAYMENT, "demo": DEMO, "max_keys": MAX_KEYS,
+            "me": current_user(), "payment_mode": PAYMENT, "demo": DEMO,
+            "payments_on": PAYMENTS_ENABLED, "keys_on": KEYS_ENABLED, "max_keys": MAX_KEYS,
             "year": datetime.now().year}
 
 
@@ -438,7 +442,7 @@ def account():
         refresh_payment(con, p["id"])
     user = con.execute("SELECT * FROM users WHERE id=?", (g.user["id"],)).fetchone()
     keys = []
-    if is_active(user):
+    if is_active(user) and KEYS_ENABLED:
         for k in user_keys(user["id"]):
             link = make_link(k["id"], f"{SITE_NAME}-{k['name']}")
             keys.append({**k, "link": link, "qr": qr_svg(link)})
@@ -451,6 +455,9 @@ def account():
 @app.post("/keys")
 @login_required
 def key_create():
+    if not KEYS_ENABLED:
+        flash("Выдача ключей скоро откроется.")
+        return redirect(url_for("account"))
     if not is_active(g.user):
         flash("Сначала оформите подписку.")
         return redirect(url_for("account") + "#plans")
@@ -500,6 +507,9 @@ def key_delete(name):
 @login_required
 def pay(code):
     plan = PLANS.get(code) or abort(404)
+    if not PAYMENTS_ENABLED:
+        flash("Оплата скоро откроется.")
+        return redirect(url_for("account"))
     if PAYMENT == "yookassa":
         idem = str(uuidlib.uuid4())
         try:
@@ -527,7 +537,7 @@ def pay(code):
 @app.route("/pay/test/<pid>", methods=["GET", "POST"])
 @login_required
 def pay_test(pid):
-    if PAYMENT != "test":
+    if PAYMENT != "test" or not PAYMENTS_ENABLED:
         abort(404)
     p = db().execute("SELECT * FROM payments WHERE id=? AND user_id=?",
                      (pid, g.user["id"])).fetchone() or abort(404)
@@ -572,12 +582,12 @@ def admin():
                             (now(), 30 * 86400, uid))
             elif act == "stop":
                 con.execute("UPDATE users SET paid_until=0 WHERE id=?", (uid,))
-        if act in ("block", "stop"):
+        if act in ("block", "stop") and KEYS_ENABLED:
             remove_user_keys({uid})
         return redirect(url_for("admin"))
     users = con.execute("SELECT * FROM users ORDER BY id DESC LIMIT 500").fetchall()
     counts: dict = {}
-    for c in clients(load_conf()):
+    for c in (clients(load_conf()) if KEYS_ENABLED else []):
         if m := re.match(r"^w(\d+)_", c["email"]):
             counts[int(m.group(1))] = counts.get(int(m.group(1)), 0) + 1
     income = con.execute("SELECT COALESCE(SUM(amount), 0) FROM payments "
@@ -587,7 +597,7 @@ def admin():
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-if os.getenv("SWEEPER", "1") == "1":
+if os.getenv("SWEEPER", "1") == "1" and KEYS_ENABLED:
     threading.Thread(target=sweep_expired, daemon=True).start()
 
 if __name__ == "__main__":

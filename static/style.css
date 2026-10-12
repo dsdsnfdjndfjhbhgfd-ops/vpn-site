@@ -85,6 +85,7 @@ p { margin: 0; }
 }
 .btn:hover { background: var(--blue-hover); text-decoration: none; }
 .btn:active { transform: scale(0.98); }
+.btn:disabled { background: var(--line); color: var(--text-2); cursor: default; transform: none; }
 .btn-sm { min-height: 32px; padding: 0 16px; font-size: 14px; }
 .btn-ghost { background: transparent; color: var(--link); border: 1px solid var(--link); }
 .btn-ghost:hover { background: color-mix(in srgb, var(--link) 8%, transparent); }

@@ -10,6 +10,8 @@
 <body>
 {% if demo %}
   <div class="test-banner">Демо-версия: оплата и выдача ключей пока отключены.</div>
+{% elif not payments_on or not keys_on %}
+  <div class="test-banner">Скоро запуск: регистрация уже открыта, оплата и ключи появятся совсем скоро.</div>
 {% elif payment_mode == 'test' %}
   <div class="test-banner">Тестовый режим оплаты: деньги не списываются.</div>
 {% endif %}

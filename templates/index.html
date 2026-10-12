@@ -81,7 +81,7 @@
         {% if me %}
           <form method="post" action="{{ url_for('pay', code=p.code) }}">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <button class="btn btn-block" type="submit">Оплатить</button>
+            {% if payments_on %}<button class="btn btn-block" type="submit">Оплатить</button>{% else %}<button class="btn btn-block" type="button" disabled>Скоро</button>{% endif %}
           </form>
         {% else %}
           <a class="btn btn-block" href="{{ url_for('register') }}">Выбрать</a>
