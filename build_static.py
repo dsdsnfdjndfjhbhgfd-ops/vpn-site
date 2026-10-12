@@ -6,6 +6,7 @@
 функции vpn_register / vpn_login / vpn_me / vpn_logout в supabase/vpn_accounts.sql).
 Запуск: python3 build_static.py
 """
+import hashlib
 import os
 import re
 import shutil
@@ -32,7 +33,8 @@ def fix(html: str) -> str:
     html = re.sub(r'action="/[^"]*"', 'action="#"', html)
     html = html.replace('<form method="post">', '<form method="post" action="#">')
     html = html.replace(PLACEHOLDER_EMAIL, '<span data-email>' + PLACEHOLDER_EMAIL + '</span>')
-    return html.replace("</body>", '<script src="site.js"></script>\n</body>')
+    ver = hashlib.md5(open("static_site/site.js", "rb").read()).hexdigest()[:8]
+    return html.replace("</body>", f'<script src="site.js?v={ver}"></script>\n</body>')
 
 
 def main():

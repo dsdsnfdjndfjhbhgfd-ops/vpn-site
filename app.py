@@ -11,6 +11,7 @@ config.json Xray, что и Telegram-бот. Ключи с сайта храня
 import base64
 import fcntl
 import grp
+import hashlib
 import io
 import json
 import logging
@@ -349,9 +350,16 @@ def too_many_attempts(key: str, limit: int = 10, window: int = 600) -> bool:
         return len(hits) > limit
 
 
+def asset(name: str) -> str:
+    """Ссылка на файл из static с версией по содержимому, чтобы браузер не брал старый из кэша."""
+    with open(os.path.join(app.static_folder, name), "rb") as f:
+        ver = hashlib.md5(f.read()).hexdigest()[:8]
+    return url_for("static", filename=name, v=ver)
+
+
 @app.context_processor
 def inject():
-    return {"csrf_token": csrf_token, "site_name": SITE_NAME, "plans": PLANS.values(),
+    return {"csrf_token": csrf_token, "asset": asset, "site_name": SITE_NAME, "plans": PLANS.values(),
             "me": current_user(), "payment_mode": PAYMENT,
             "payments_on": PAYMENTS_ENABLED, "keys_on": KEYS_ENABLED, "max_keys": MAX_KEYS,
             "year": datetime.now().year}

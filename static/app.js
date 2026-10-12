@@ -154,6 +154,7 @@
         part('ip').textContent = 'IP скрыт';
         started = Date.now();
         speeds.length = 0;
+        for (let i = 0; i < 23; i++) speeds.push(Math.round(860 + Math.random() * 110));
         update();
         tick = setInterval(update, 1000);
       }, 1500);
