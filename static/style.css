@@ -339,21 +339,19 @@ p { margin: 0; }
 }
 .float-chip .ico { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; font-size: 15px; }
 .float-chip small { display: block; color: var(--text-3); font-size: 11px; font-weight: 400; }
-.float-chip.c1 { left: -10px; top: 18%; }
+/* Плашки прилегают к рамке телефона и не закрывают экран */
+.device-wrap { position: relative; }
+.float-chip.c1 { right: calc(100% - 26px); top: 92px; }
 .float-chip.c1 .ico { background: rgba(62, 224, 143, 0.15); color: var(--green); }
-.float-chip.c2 { right: -20px; top: 48%; animation-delay: -2s; }
+.float-chip.c2 { left: calc(100% - 26px); top: 236px; animation-delay: -2s; }
 .float-chip.c2 .ico { background: rgba(91, 140, 255, 0.18); color: #8fb0ff; }
-.float-chip.c3 { left: 4px; bottom: 12%; animation-delay: -4s; }
+.float-chip.c3 { right: calc(100% - 26px); bottom: 150px; animation-delay: -4s; }
 .float-chip.c3 .ico { background: rgba(255, 111, 181, 0.16); color: var(--pink); }
 .float-chip svg { width: 16px; height: 16px; }
 @keyframes bob { 50% { transform: translateY(-12px); } }
-@media (max-width: 1100px) { .float-chip.c1 { left: 0; } .float-chip.c2 { right: 0; } }
-@media (max-width: 520px) {
-  .device { width: 270px; height: 560px; }
-  .float-chip { font-size: 12px; padding: 8px 10px; }
-  .float-chip small { display: none; }
-  .float-chip.c1 { left: -6px; } .float-chip.c2 { right: -6px; } .float-chip.c3 { display: none; }
-}
+@media (max-width: 1379px) { .float-chip small { display: none; } }
+@media (max-width: 1279px) { .float-chip { display: none; } }
+@media (max-width: 520px) { .device { width: 270px; height: 560px; } }
 
 /* ---------- цифры и бегущая строка ---------- */
 .stats-band { padding: 0 22px; }
