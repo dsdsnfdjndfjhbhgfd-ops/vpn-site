@@ -2,11 +2,12 @@
 {% block title %}{{ 'Регистрация' if mode == 'register' else 'Вход' }} · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="auth">
-  <div class="auth-box">
-    <span class="brand-mark" style="display:inline-block;width:44px;height:44px;border-radius:12px"></span>
-    <h1 class="title" style="margin-top:18px">
-      {{ 'Создайте аккаунт' if mode == 'register' else 'Вход в ' ~ site_name }}
+  <div class="auth-box reveal">
+    <div class="orb"><svg class="brand-mark"><use href="#logo"/></svg></div>
+    <h1 class="title">
+      {{ 'Создайте аккаунт' if mode == 'register' else 'С возвращением' }}
     </h1>
+    <p class="sub">{{ 'Нужна только почта и пароль.' if mode == 'register' else 'Войдите в кабинет ' ~ site_name ~ '.' }}</p>
     <form method="post">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       {% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
@@ -20,6 +21,7 @@
         <label for="password">Пароль{% if mode == 'register' %} (от 8 символов){% endif %}</label>
       </div>
       {% if mode == 'register' %}
+      <div class="meter" data-score="0" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="meter-label"></span></div>
       <div class="field">
         <input id="password2" name="password2" type="password" placeholder=" " required minlength="8" autocomplete="new-password">
         <label for="password2">Повторите пароль</label>

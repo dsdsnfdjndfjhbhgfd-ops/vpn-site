@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}Кабинет · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="page">
@@ -7,7 +8,7 @@
     <p class="eyebrow">Кабинет</p>
     <h1 class="title">{{ user.email }}</h1>
 
-    <div class="card status{% if active %} on{% endif %}">
+    <div class="card status spot{% if active %} on{% endif %}">
       <span class="dot"></span>
       <div>
         {% if active %}
@@ -26,13 +27,13 @@
 
     <h2 class="section-title" id="keys">Ключи</h2>
     {% if not keys_on %}
-      <div class="card empty">Выдача ключей скоро откроется.</div>
+      <div class="card empty"><div class="icon">{{ ui.icon('key') }}</div>Выдача ключей скоро откроется.</div>
     {% elif active %}
-      <p class="muted" style="margin-top:6px">Один ключ на устройство, до {{ max_keys }} штук. После окончания подписки ключи отключаются.</p>
+      <p class="muted" style="margin-top:6px">Один ключ на устройство, до {{ max_keys }} штук. После окончания подписки ключи отключаются. Нажмите на QR-код, чтобы увеличить его.</p>
       <div class="keys">
         {% for k in keys %}
-        <div class="card key">
-          <img src="{{ k.qr }}" alt="QR-код ключа {{ k.name }}">
+        <div class="card key spot">
+          <img src="{{ k.qr }}" alt="QR-код ключа {{ k.name }}" data-zoom>
           <div>
             <h3>{{ k.name }}</h3>
             <code>{{ k.link }}</code>
@@ -46,7 +47,7 @@
           </div>
         </div>
         {% else %}
-        <div class="card empty">Ключей пока нет. Создайте первый ниже.</div>
+        <div class="card empty"><div class="icon">{{ ui.icon('key') }}</div>Ключей пока нет. Создайте первый ниже.</div>
         {% endfor %}
       </div>
       {% if keys | length < max_keys %}
@@ -61,25 +62,12 @@
       </div>
       {% endif %}
     {% else %}
-      <div class="card empty">Ключи появятся здесь после оплаты подписки.</div>
+      <div class="card empty"><div class="icon">{{ ui.icon('card') }}</div>Ключи появятся здесь после оплаты подписки.</div>
     {% endif %}
 
     <h2 class="section-title" id="plans">{{ 'Продлить подписку' if active else 'Тарифы' }}</h2>
     {% if active %}<p class="muted" style="margin-top:6px">Дни добавятся к текущей подписке.</p>{% endif %}
-    <div class="plans" style="margin-top:24px">
-      {% for p in plans %}
-      <div class="plan{% if loop.index == 2 %} featured{% endif %}" style="background:var(--card);box-shadow:var(--shadow)">
-        {% if loop.index == 2 %}<span class="badge">Популярный</span>{% endif %}
-        <h3>{{ p.title }}</h3>
-        <div class="price">{{ p.price }}&nbsp;<small>₽</small></div>
-        <div class="per">{{ (p.price * 30 / p.days) | round | int }} ₽ в месяц</div>
-        <form method="post" action="{{ url_for('pay', code=p.code) }}">
-          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-          {% if payments_on %}<button class="btn btn-block" type="submit">Оплатить</button>{% else %}<button class="btn btn-block" type="button" disabled>Скоро</button>{% endif %}
-        </form>
-      </div>
-      {% endfor %}
-    </div>
+    {{ ui.plan_cards(plans) }}
 
     <h2 class="section-title">Как подключиться</h2>
     <div class="apps">
@@ -88,7 +76,7 @@
       <div class="app"><b>Mac, Windows</b><span>Hiddify с сайта hiddify.com</span></div>
     </div>
     <div class="card">
-      <ol style="margin:0;padding-left:20px;color:var(--text-2)">
+      <ol class="howto">
         <li>Создайте ключ и нажмите «Скопировать» (или откройте QR-код).</li>
         <li>В приложении нажмите «+» и выберите «Импорт из буфера обмена» или сканер QR.</li>
         <li>Нажмите «Подключить».</li>

@@ -24,7 +24,7 @@ PAGES = {"/": "index.html", "/register": "register.html", "/login": "login.html"
 
 
 def fix(html: str) -> str:
-    html = html.replace("/static/style.css", "style.css")
+    html = html.replace("/static/style.css", "style.css").replace("/static/app.js", "app.js")
     for path, name in sorted(PAGES.items(), key=lambda x: -len(x[0])):
         html = re.sub(rf'(href|action)="{re.escape(path)}(#[^"]*)?"',
                       lambda m: f'{m.group(1)}="{name}{m.group(2) or ""}"', html)
@@ -53,6 +53,7 @@ def main():
     assert r.status_code == 200 and PLACEHOLDER_EMAIL in r.get_data(as_text=True)
     open(os.path.join(OUT, "account.html"), "w").write(fix(r.get_data(as_text=True)))
     shutil.copy("static/style.css", OUT)
+    shutil.copy("static/app.js", OUT)
     shutil.copy("static_site/site.js", OUT)
     print("site built in", OUT)
 
