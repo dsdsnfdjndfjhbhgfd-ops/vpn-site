@@ -8,7 +8,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-{% if payment_mode == 'test' %}
+{% if demo %}
+  <div class="test-banner">Демо-версия: оплата и выдача ключей пока отключены.</div>
+{% elif payment_mode == 'test' %}
   <div class="test-banner">Тестовый режим оплаты: деньги не списываются.</div>
 {% endif %}
 <nav class="nav">
