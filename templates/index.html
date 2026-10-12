@@ -1,63 +1,113 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ site_name }}. Свободный интернет.{% endblock %}
 {% block content %}
+{% set ns = namespace(min=None) %}
+{% for p in plans %}{% set per = (p.price * 30 / p.days) | round | int %}{% if ns.min is none or per < ns.min %}{% set ns.min = per %}{% endif %}{% endfor %}
+
 <section class="hero">
-  <p class="eyebrow">{{ site_name }} VPN</p>
-  <h1 class="headline">Интернет без границ.<br><span class="gradient-text">Одним касанием.</span></h1>
-  <p class="lead">Быстрый и незаметный VPN для всех ваших устройств.</p>
-  <div class="actions">
-    {% if me %}
-      <a class="btn" href="{{ url_for('account') }}">Открыть кабинет</a>
-    {% else %}
-      <a class="btn" href="{{ url_for('register') }}">Начать</a>
-    {% endif %}
-    <a class="more" href="#pricing">Тарифы</a>
-  </div>
-  <div class="device" aria-hidden="true">
-    <div class="screen">
-      <div class="island"></div>
-      <div class="power">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
+  <div class="hero-grid" aria-hidden="true"></div>
+  <canvas class="hero-net" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <div class="chip reveal"><span class="tag">Новое</span>Протокол VLESS Reality на каждом ключе</div>
+      <h1 class="headline reveal">Интернет без границ.<br><span class="gradient-text">Одним касанием.</span></h1>
+      <p class="lead reveal">Быстрый и незаметный VPN для всех ваших устройств. Подключение за минуту, без сложных настроек.</p>
+      <div class="actions reveal">
+        {% if me %}
+          <a class="btn" href="{{ url_for('account') }}">Открыть кабинет <span class="arrow">→</span></a>
+        {% else %}
+          <a class="btn" href="{{ url_for('register') }}">Начать <span class="arrow">→</span></a>
+        {% endif %}
+        <a class="more" href="#pricing">Смотреть тарифы</a>
       </div>
-      <div class="state">Подключено</div>
-      <div class="sub">Защищённое соединение</div>
-      <div class="stats">
-        <div class="stat"><b>12 мс</b><span>пинг</span></div>
-        <div class="stat"><b>940</b><span>Мбит/с</span></div>
+      <div class="trust reveal">
+        <span>{{ ui.icon('check') }}Без автопродлений</span>
+        <span>{{ ui.icon('check') }}Только почта для входа</span>
+        <span>{{ ui.icon('check') }}До {{ max_keys }} устройств</span>
+      </div>
+    </div>
+
+    <div class="hero-visual reveal" data-tilt>
+      <div class="float-chip c1"><span class="ico">{{ ui.icon('lock') }}</span><div>Трафик зашифрован<small>TLS 1.3</small></div></div>
+      <div class="float-chip c2"><span class="ico">{{ ui.icon('bolt') }}</span><div>XTLS Vision<small>без лишних задержек</small></div></div>
+      <div class="float-chip c3"><span class="ico">{{ ui.icon('eye-off') }}</span><div>Выглядит как HTTPS<small>сложно заблокировать</small></div></div>
+      <div class="device">
+        <div class="screen" data-vpn data-state="off">
+          <div class="island"></div>
+          <div class="screen-top"><span>{{ site_name }}</span><span class="mode">Демо</span></div>
+          <button class="power" type="button" aria-label="Включить или выключить VPN (демонстрация)">
+            <span class="ring r1"></span><span class="ring r2"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
+          </button>
+          <div class="state" data-vpn-state aria-live="polite">Не подключено</div>
+          <div class="sub" data-vpn-sub>Нажмите, чтобы подключиться</div>
+          <div class="timer" data-vpn-timer>00:00:00</div>
+          <div class="stats">
+            <div class="stat"><b data-vpn-ping>—</b><span>пинг, мс</span></div>
+            <div class="stat"><b data-vpn-speed>—</b><span>Мбит/с</span>
+              <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline data-vpn-spark points=""/></svg></div>
+          </div>
+          <div class="loc"><span class="loc-ico">{{ ui.icon('shield') }}</span>VLESS Reality<span class="ip" data-vpn-ip>IP открыт</span></div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<section class="section alt" id="features">
+<section class="stats-band">
+  <div class="stats-grid reveal">
+    <div class="stat-cell"><b><span data-count="{{ max_keys }}">{{ max_keys }}</span></b><span>устройства на аккаунт</span></div>
+    <div class="stat-cell"><b><span data-count="{{ ns.min }}">{{ ns.min }}</span> ₽</b><span>в месяц на самом выгодном тарифе</span></div>
+    <div class="stat-cell"><b><span data-count="4">4</span></b><span>платформы: iOS, Android, Mac, Windows</span></div>
+    <div class="stat-cell"><b>1 мин</b><span>от регистрации до ключа</span></div>
+  </div>
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track">
+      {% for _ in range(2) %}
+      <span>iPhone</span><i>✦</i><span>Android</span><i>✦</i><span>macOS</span><i>✦</i><span>Windows</span><i>✦</i>
+      <span>Hiddify</span><i>✦</i><span>v2RayTun</span><i>✦</i><span>v2rayNG</span><i>✦</i><span>Streisand</span><i>✦</i>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="section" id="features">
   <div class="wrap">
-    <div class="center reveal">
-      <h2 class="title">Создан, чтобы просто работать.</h2>
-      <p class="lead">Современный протокол, который не замедляет и не бросается в глаза.</p>
+    <div class="center">
+      <p class="eyebrow reveal">Возможности</p>
+      <h2 class="title reveal">Создан, чтобы просто работать.</h2>
+      <p class="lead reveal">Современный протокол, который не замедляет и не бросается в глаза.</p>
     </div>
     <div class="bento">
-      <div class="tile wide dark reveal">
+      <div class="tile wide dark spot reveal">
         <div class="big gradient-text">VLESS Reality</div>
+        <div class="lanes" aria-hidden="true">
+          <div class="lane"><span>Вы</span><span class="track"></span><span class="tag">HTTPS</span></div>
+          <div class="lane"><span>Вы</span><span class="track"></span><span class="tag">HTTPS</span></div>
+          <div class="lane"><span>Вы</span><span class="track"></span><span class="tag">HTTPS</span></div>
+        </div>
         <h3>Незаметный.</h3>
         <p>Трафик выглядит как обычный HTTPS к крупному сайту. Его сложно распознать и заблокировать.</p>
       </div>
-      <div class="tile wide reveal">
-        <div class="icon">⚡️</div>
+      <div class="tile wide spot reveal">
+        <div class="icon">{{ ui.icon('bolt') }}</div>
+        <div class="bars" aria-hidden="true">{% for _ in range(14) %}<i style="animation-delay:-{{ loop.index * 0.13 }}s"></i>{% endfor %}</div>
         <h3>Быстрый.</h3>
         <p>XTLS Vision и BBR на сервере: видео в высоком качестве и звонки без задержек.</p>
       </div>
-      <div class="tile reveal">
-        <div class="icon">📱</div>
+      <div class="tile spot reveal">
+        <div class="icon">{{ ui.icon('devices') }}</div>
         <h3>На всех устройствах.</h3>
         <p>iPhone, Android, Mac, Windows. До {{ max_keys }} ключей на аккаунт.</p>
       </div>
-      <div class="tile reveal">
-        <div class="icon">🔒</div>
+      <div class="tile spot reveal">
+        <div class="icon">{{ ui.icon('lock') }}</div>
         <h3>Приватный.</h3>
         <p>Для регистрации нужна только почта. Каждый ключ виден только вам.</p>
       </div>
-      <div class="tile reveal">
-        <div class="icon">✨</div>
+      <div class="tile spot reveal">
+        <div class="icon">{{ ui.icon('qr') }}</div>
         <h3>Подключение за минуту.</h3>
         <p>Отсканируйте QR-код или скопируйте ссылку в приложение.</p>
       </div>
@@ -67,55 +117,81 @@
 
 <section class="section" id="pricing">
   <div class="wrap">
-    <div class="center reveal">
-      <h2 class="title">Выберите свой тариф.</h2>
-      <p class="lead">Без автопродлений. Платите, только когда нужно.</p>
+    <div class="center">
+      <p class="eyebrow reveal">Тарифы</p>
+      <h2 class="title reveal">Выберите свой тариф.</h2>
+      <p class="lead reveal">Без автопродлений. Платите, только когда нужно.</p>
     </div>
-    <div class="plans">
-      {% for p in plans %}
-      <div class="plan reveal{% if loop.index == 2 %} featured{% endif %}">
-        {% if loop.index == 2 %}<span class="badge">Популярный</span>{% endif %}
-        <h3>{{ p.title }}</h3>
-        <div class="price">{{ p.price }}&nbsp;<small>₽</small></div>
-        <div class="per">{{ (p.price * 30 / p.days) | round | int }} ₽ в месяц</div>
-        {% if me %}
-          <form method="post" action="{{ url_for('pay', code=p.code) }}">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            {% if payments_on %}<button class="btn btn-block" type="submit">Оплатить</button>{% else %}<button class="btn btn-block" type="button" disabled>Скоро</button>{% endif %}
-          </form>
-        {% else %}
-          <a class="btn btn-block" href="{{ url_for('register') }}">Выбрать</a>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
+    {{ ui.plan_cards(plans, signup_link=not me) }}
+    <p class="fine center reveal">Все тарифы дают одинаковый доступ. Чем дольше срок, тем ниже цена за месяц.</p>
   </div>
 </section>
 
-<section class="section alt" id="how">
+<section class="section" id="how">
   <div class="wrap">
-    <div class="center reveal">
-      <h2 class="title">Три шага до свободы.</h2>
+    <div class="center">
+      <p class="eyebrow reveal">Как подключиться</p>
+      <h2 class="title reveal">Три шага до свободы.</h2>
     </div>
-    <div class="steps">
-      <div class="step reveal">
-        <div class="num">1</div>
+    <div class="steps reveal">
+      <div class="step spot">
+        <div class="num"><span>1</span></div>
         <h3>Зарегистрируйтесь</h3>
         <p>Почта и пароль. Больше ничего.</p>
       </div>
-      <div class="step reveal">
-        <div class="num">2</div>
+      <div class="step spot">
+        <div class="num"><span>2</span></div>
         <h3>Оплатите подписку</h3>
         <p>Картой или через СБП. Доступ открывается сразу.</p>
       </div>
-      <div class="step reveal">
-        <div class="num">3</div>
+      <div class="step spot">
+        <div class="num"><span>3</span></div>
         <h3>Получите ключ</h3>
         <p>Создайте ключ в кабинете и добавьте его в приложение Hiddify, v2RayTun или v2rayNG.</p>
       </div>
     </div>
-    <div class="actions reveal">
-      <a class="btn" href="{{ url_for('account') if me else url_for('register') }}">Начать</a>
+  </div>
+</section>
+
+<section class="section" id="faq">
+  <div class="narrow">
+    <div class="center">
+      <p class="eyebrow reveal">Вопросы</p>
+      <h2 class="title reveal">Частые вопросы.</h2>
+    </div>
+    <div class="faq">
+      <details class="reveal">
+        <summary>Что такое VLESS Reality?</summary>
+        <div class="answer">Современный протокол, который маскирует подключение под обычный HTTPS к крупному сайту. Со стороны оно выглядит как привычный трафик, поэтому его сложно распознать и заблокировать.</div>
+      </details>
+      <details class="reveal">
+        <summary>На скольких устройствах можно пользоваться?</summary>
+        <div class="answer">До {{ max_keys }} устройств на один аккаунт. Для каждого устройства создаётся свой ключ, ненужный можно удалить в кабинете и создать новый.</div>
+      </details>
+      <details class="reveal">
+        <summary>Какие приложения нужны?</summary>
+        <div class="answer">На iPhone и iPad: v2RayTun или Streisand из App Store. На Android: v2rayNG или Hiddify. На Mac и Windows: Hiddify с сайта hiddify.com.</div>
+      </details>
+      <details class="reveal">
+        <summary>Подписка продлевается автоматически?</summary>
+        <div class="answer">Нет. Вы платите только за выбранный срок. Если продлить заранее, новые дни добавятся к текущей подписке.</div>
+      </details>
+      <details class="reveal">
+        <summary>Что будет, когда подписка закончится?</summary>
+        <div class="answer">Ключи отключатся автоматически. Аккаунт останется: оплатите любой тариф и создайте ключи заново.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="cta reveal">
+      <h2 class="title">Готовы к свободному интернету?</h2>
+      <p class="lead">Создайте аккаунт за полминуты и подключите первое устройство.</p>
+      <div class="actions center">
+        <a class="btn" href="{{ url_for('account') if me else url_for('register') }}">{{ 'Открыть кабинет' if me else 'Создать аккаунт' }} <span class="arrow">→</span></a>
+      </div>
     </div>
   </div>
 </section>

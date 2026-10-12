@@ -76,7 +76,7 @@
     }
     if (!f.email) return;
     if (f.password2 && f.password.value !== f.password2.value) return flash(form, 'Пароли не совпадают.');
-    if (btn) btn.disabled = true;
+    if (btn) { btn.disabled = true; btn.classList.add('loading'); }
     try {
       const fn = f.password2 ? 'vpn_register' : 'vpn_login';
       const t = await rpc(fn, { p_email: f.email.value, p_password: f.password.value });
@@ -84,7 +84,7 @@
       go('account.html');
     } catch (err) {
       flash(form, ERRORS[err.message] || 'Не удалось связаться с сервером. Попробуйте ещё раз.');
-      if (btn) btn.disabled = false;
+      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
     }
   }));
 })();

@@ -3,23 +3,48 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#05060a">
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <script>document.documentElement.classList.add('js')</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b8cff"/><stop offset=".55" stop-color="#a46bff"/><stop offset="1" stop-color="#ff6fb5"/>
+    </linearGradient>
+    <linearGradient id="sparkGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5b8cff"/><stop offset="1" stop-color="#ff6fb5"/>
+    </linearGradient>
+    <symbol id="logo" viewBox="0 0 32 32">
+      <path d="M16 2.5 4.5 7v8.2c0 7.1 4.9 12.6 11.5 14.3 6.6-1.7 11.5-7.2 11.5-14.3V7L16 2.5Z" fill="url(#brandGrad)"/>
+      <path d="m11 16.2 3.4 3.4 6.8-7" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+<div class="bg" aria-hidden="true">
+  <div class="aurora a1"></div><div class="aurora a2"></div><div class="aurora a3"></div><div class="noise"></div>
+</div>
+<div class="progress" aria-hidden="true"></div>
+
 {% if not payments_on or not keys_on %}
-  <div class="test-banner">Скоро запуск: регистрация уже открыта, оплата и ключи появятся совсем скоро.</div>
+  <div class="topbar"><span class="pulse-dot"></span><span><b>Скоро запуск.</b> Регистрация уже открыта, оплата и ключи появятся совсем скоро.</span></div>
 {% elif payment_mode == 'test' %}
-  <div class="test-banner">Тестовый режим оплаты: деньги не списываются.</div>
+  <div class="topbar"><span class="pulse-dot"></span><span>Тестовый режим оплаты: деньги не списываются.</span></div>
 {% endif %}
 <nav class="nav">
   <div class="nav-inner">
-    <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark"></span>{{ site_name }}</a>
-    <div class="nav-links">
-      <a class="hide-sm" href="{{ url_for('index') }}#features">Возможности</a>
-      <a class="hide-sm" href="{{ url_for('index') }}#pricing">Тарифы</a>
-      <a class="hide-sm" href="{{ url_for('index') }}#how">Как подключиться</a>
+    <a class="brand" href="{{ url_for('index') }}"><svg class="brand-mark"><use href="#logo"/></svg>{{ site_name }}</a>
+    <div class="nav-links" id="nav-links">
+      <a href="{{ url_for('index') }}#features">Возможности</a>
+      <a href="{{ url_for('index') }}#pricing">Тарифы</a>
+      <a href="{{ url_for('index') }}#how">Как подключиться</a>
+      <a href="{{ url_for('index') }}#faq">Вопросы</a>
       {% if me %}
         <a href="{{ url_for('account') }}">Кабинет</a>
         <form method="post" action="{{ url_for('logout') }}">
@@ -31,6 +56,7 @@
         <a class="btn btn-sm" href="{{ url_for('register') }}">Регистрация</a>
       {% endif %}
     </div>
+    <button class="burger" type="button" aria-label="Меню" aria-expanded="false" aria-controls="nav-links"><span></span><span></span></button>
   </div>
 </nav>
 
@@ -38,22 +64,11 @@
 
 <footer class="footer">
   <div class="wrap">
-    <span>© {{ year }} {{ site_name }}. Все права защищены.</span>
+    <a class="brand" href="{{ url_for('index') }}"><svg class="brand-mark"><use href="#logo"/></svg>{{ site_name }}</a>
     <span>Ключи выдаются только на ваши устройства. Не передавайте их другим.</span>
+    <span>© {{ year }} {{ site_name }}. Все права защищены.</span>
   </div>
 </footer>
-<script>
-  // Плавное появление блоков при прокрутке
-  const io = new IntersectionObserver(es => es.forEach(e => {
-    if (e.isIntersecting) { e.target.classList.add('shown'); io.unobserve(e.target); }
-  }), { threshold: 0.15 });
-  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
-  // Копирование ключа
-  document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
-    await navigator.clipboard.writeText(b.dataset.copy);
-    const t = b.textContent; b.textContent = 'Скопировано ✓';
-    setTimeout(() => b.textContent = t, 1600);
-  }));
-</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
