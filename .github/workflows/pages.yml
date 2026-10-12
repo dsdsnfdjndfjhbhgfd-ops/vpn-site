@@ -1,6 +1,6 @@
-# Публикует демо-версию сайта (без оплаты и ключей) на GitHub Pages.
+# Публикует сайт в режиме предзапуска (регистрация через Supabase, без оплаты и ключей) на GitHub Pages.
 # Один раз включите: Settings → Pages → Source: GitHub Actions.
-name: Demo on GitHub Pages
+name: Site on GitHub Pages
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: python build_demo.py _site
+      - run: python build_static.py _site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -117,8 +117,14 @@ KEYS_ENABLED=0
    - `SSH_KEY`: содержимое файла `deploy_key` целиком
 4. Вкладка Actions → Deploy → Run workflow. Дальше выкладка идёт сама при каждом изменении.
 
-## Демо-версия на GitHub Pages
+## Сайт на GitHub Pages (предзапуск)
 
-`build_demo.py` собирает статическую копию сайта из тех же шаблонов: главная, регистрация, вход и кабинет. Оплата и ключи в демо отключены, а «аккаунт» хранится только в браузере посетителя. Workflow `.github/workflows/pages.yml` публикует её после каждого push в `main`.
+Сейчас сайт работает на GitHub Pages: https://dsdsnfdjndfjhbhgfd-ops.github.io/vpn-site/
 
-Чтобы включить: Settings → Pages → Source: **GitHub Actions**. На бесплатном тарифе GitHub Pages работает только для публичных репозиториев.
+Это статическая копия из тех же шаблонов (её собирает `build_static.py`), оплата и ключи в ней выключены. Регистрация и вход настоящие: аккаунты хранятся в Supabase, в проекте `dnwubeyihrorwzlfxfsn`, в схеме `vpn` (таблица `vpn.users`, пароли зашифрованы bcrypt). Структура базы и функции лежат в `supabase/vpn_accounts.sql`. Браузер обращается к базе только через функции `vpn_register`, `vpn_login`, `vpn_me` и `vpn_logout`, а прочитать таблицы напрямую не может.
+
+Посмотреть зарегистрированных: Supabase → SQL Editor → `select id, email, created_at from vpn.users order by id desc;`
+
+Workflow `.github/workflows/pages.yml` пересобирает сайт после каждого push в `main`.
+
+Когда включите оплату и ключи на VPN-сервере, аккаунты из Supabase нужно будет перенести в базу сервера.

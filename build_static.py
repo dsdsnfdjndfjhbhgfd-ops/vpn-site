@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Собирает статическую демо-версию сайта (без оплаты и ключей) в папку _site.
+"""Собирает статическую версию сайта для GitHub Pages в папку _site (режим предзапуска).
 
-Страницы рендерятся теми же шаблонами, что и настоящий сайт. Регистрация и вход
-в демо работают только в браузере (demo/demo.js), сервер не нужен.
-Запуск: python3 build_demo.py
+Страницы рендерятся теми же шаблонами, что и настоящий сайт, с выключенными
+оплатой и ключами. Регистрация и вход идут в Supabase (static_site/site.js,
+функции vpn_register / vpn_login / vpn_me / vpn_logout в supabase/vpn_accounts.sql).
+Запуск: python3 build_static.py
 """
 import os
 import re
@@ -12,11 +13,12 @@ import sys
 import tempfile
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "_site"
-os.environ.update(SECRET_KEY="demo", DEMO="1", SWEEPER="0", PAYMENT_PROVIDER="test",
+os.environ.update(SECRET_KEY="static", SWEEPER="0", PAYMENT_PROVIDER="test",
+                  PAYMENTS_ENABLED="0", KEYS_ENABLED="0",
                   DATA_DIR=tempfile.mkdtemp())
 import app as site  # noqa: E402
 
-DEMO_EMAIL = "demo@example.com"
+PLACEHOLDER_EMAIL = "user@example.com"
 PAGES = {"/": "index.html", "/register": "register.html", "/login": "login.html",
          "/account": "account.html"}
 
@@ -26,11 +28,11 @@ def fix(html: str) -> str:
     for path, name in sorted(PAGES.items(), key=lambda x: -len(x[0])):
         html = re.sub(rf'(href|action)="{re.escape(path)}(#[^"]*)?"',
                       lambda m: f'{m.group(1)}="{name}{m.group(2) or ""}"', html)
-    # Формы в демо обрабатывает demo.js
+    # Формы обрабатывает site.js
     html = re.sub(r'action="/[^"]*"', 'action="#"', html)
     html = html.replace('<form method="post">', '<form method="post" action="#">')
-    html = html.replace(DEMO_EMAIL, '<span data-demo-email>' + DEMO_EMAIL + '</span>')
-    return html.replace("</body>", '<script src="demo.js"></script>\n</body>')
+    html = html.replace(PLACEHOLDER_EMAIL, '<span data-email>' + PLACEHOLDER_EMAIL + '</span>')
+    return html.replace("</body>", '<script src="site.js"></script>\n</body>')
 
 
 def main():
@@ -45,14 +47,14 @@ def main():
     c.get("/register")
     with c.session_transaction() as s:
         token = s["csrf"]
-    c.post("/register", data={"csrf": token, "email": DEMO_EMAIL,
-                              "password": "demo-pass", "password2": "demo-pass"})
+    c.post("/register", data={"csrf": token, "email": PLACEHOLDER_EMAIL,
+                              "password": "static-pass", "password2": "static-pass"})
     r = c.get("/account")
-    assert r.status_code == 200 and DEMO_EMAIL in r.get_data(as_text=True)
+    assert r.status_code == 200 and PLACEHOLDER_EMAIL in r.get_data(as_text=True)
     open(os.path.join(OUT, "account.html"), "w").write(fix(r.get_data(as_text=True)))
     shutil.copy("static/style.css", OUT)
-    shutil.copy("demo/demo.js", OUT)
-    print("demo built in", OUT)
+    shutil.copy("static_site/site.js", OUT)
+    print("site built in", OUT)
 
 
 if __name__ == "__main__":

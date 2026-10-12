@@ -51,8 +51,6 @@ MAX_KEYS = int(os.getenv("MAX_KEYS", "3"))
 # test — кнопка «оплатить» сразу продлевает подписку (для проверки);
 # yookassa — настоящая оплата через ЮKassa
 PAYMENT = os.getenv("PAYMENT_PROVIDER", "test").strip().lower()
-# Статическая демо-версия для GitHub Pages (собирается build_demo.py)
-DEMO = os.getenv("DEMO") == "1"
 # Предзапуск: регистрация работает, а оплату и ключи можно временно выключить
 PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "1") == "1"
 KEYS_ENABLED = os.getenv("KEYS_ENABLED", "1") == "1"
@@ -354,7 +352,7 @@ def too_many_attempts(key: str, limit: int = 10, window: int = 600) -> bool:
 @app.context_processor
 def inject():
     return {"csrf_token": csrf_token, "site_name": SITE_NAME, "plans": PLANS.values(),
-            "me": current_user(), "payment_mode": PAYMENT, "demo": DEMO,
+            "me": current_user(), "payment_mode": PAYMENT,
             "payments_on": PAYMENTS_ENABLED, "keys_on": KEYS_ENABLED, "max_keys": MAX_KEYS,
             "year": datetime.now().year}
 
