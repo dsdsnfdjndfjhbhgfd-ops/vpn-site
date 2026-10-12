@@ -1,0 +1,9 @@
+# Порт 443 занят VPN (Xray), поэтому сайт открывается на 8443.
+# Сертификат Let's Encrypt Caddy получит сам через порт 80.
+{
+	https_port 8443
+}
+
+vpn.example.com {
+	reverse_proxy 127.0.0.1:8000
+}

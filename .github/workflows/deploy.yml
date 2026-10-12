@@ -1,0 +1,57 @@
+# Выкладывает сайт на VPN-сервер при каждом push в main.
+# Нужны секреты репозитория (Settings → Secrets and variables → Actions):
+#   SSH_HOST — IP сервера, SSH_KEY — приватный SSH-ключ с доступом к root.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          if [ -z "$SSH_HOST" ]; then
+            echo "::warning::Секреты SSH_HOST и SSH_KEY не заданы, выкладка пропущена."
+            echo "skip=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up SSH
+        if: env.skip != '1'
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload and restart
+        if: env.skip != '1'
+        run: |
+          SSH="ssh -i ~/.ssh/id_deploy root@${{ secrets.SSH_HOST }}"
+          $SSH mkdir -p /opt/vpn-site
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" \
+            --exclude .git --exclude .github --exclude venv \
+            ./ root@${{ secrets.SSH_HOST }}:/opt/vpn-site/
+          $SSH 'set -e
+            cd /opt/vpn-site
+            [ -d venv ] || python3 -m venv venv
+            venv/bin/pip install -q -r requirements.txt
+            if [ ! -f /etc/vpn-site.env ]; then
+              echo "Нет /etc/vpn-site.env: создайте его по README (шаг 2), затем перезапустите выкладку."
+              exit 1
+            fi
+            cp vpn-site.service /etc/systemd/system/vpn-site.service
+            systemctl daemon-reload
+            systemctl enable vpn-site >/dev/null 2>&1
+            systemctl restart vpn-site
+            sleep 2
+            systemctl is-active vpn-site'

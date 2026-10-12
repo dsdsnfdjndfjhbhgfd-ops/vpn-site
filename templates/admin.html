@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Админка · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="page">
+  <div class="wrap">
+    <p class="eyebrow">Админка</p>
+    <h1 class="title">Пользователи</h1>
+    <p class="lead">Всего: {{ users | length }}. Оплачено за всё время: {{ income }} ₽.</p>
+    <div class="card table-scroll">
+      <table>
+        <tr><th>ID</th><th>Почта</th><th>Подписка</th><th>Ключей</th><th></th></tr>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.id }}</td>
+          <td>{{ u.email }}</td>
+          <td>
+            {% if u.blocked %}<span class="pill off">заблокирован</span>
+            {% elif u.paid_until > now %}<span class="pill on">до {{ u.paid_until | date }}</span>
+            {% else %}<span class="pill">нет</span>{% endif %}
+          </td>
+          <td>{{ counts.get(u.id, 0) }}</td>
+          <td style="white-space:nowrap">
+            {% for act, label in [('add30', '+30 дней'), ('stop', 'Снять подписку'),
+                                  ('unblock' if u.blocked else 'block', 'Разблокировать' if u.blocked else 'Заблокировать')] %}
+            <form method="post">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <input type="hidden" name="uid" value="{{ u.id }}">
+              <button class="linklike" name="action" value="{{ act }}" style="font-size:13px;margin-right:10px">{{ label }}</button>
+            </form>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

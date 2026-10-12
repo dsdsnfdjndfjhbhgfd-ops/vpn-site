@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ site_name }}. Свободный интернет.{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">{{ site_name }} VPN</p>
+  <h1 class="headline">Интернет без границ.<br><span class="gradient-text">Одним касанием.</span></h1>
+  <p class="lead">Быстрый и незаметный VPN для всех ваших устройств.</p>
+  <div class="actions">
+    {% if me %}
+      <a class="btn" href="{{ url_for('account') }}">Открыть кабинет</a>
+    {% else %}
+      <a class="btn" href="{{ url_for('register') }}">Начать</a>
+    {% endif %}
+    <a class="more" href="#pricing">Тарифы</a>
+  </div>
+  <div class="device" aria-hidden="true">
+    <div class="screen">
+      <div class="island"></div>
+      <div class="power">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
+      </div>
+      <div class="state">Подключено</div>
+      <div class="sub">Защищённое соединение</div>
+      <div class="stats">
+        <div class="stat"><b>12 мс</b><span>пинг</span></div>
+        <div class="stat"><b>940</b><span>Мбит/с</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="features">
+  <div class="wrap">
+    <div class="center reveal">
+      <h2 class="title">Создан, чтобы просто работать.</h2>
+      <p class="lead">Современный протокол, который не замедляет и не бросается в глаза.</p>
+    </div>
+    <div class="bento">
+      <div class="tile wide dark reveal">
+        <div class="big gradient-text">VLESS Reality</div>
+        <h3>Незаметный.</h3>
+        <p>Трафик выглядит как обычный HTTPS к крупному сайту. Его сложно распознать и заблокировать.</p>
+      </div>
+      <div class="tile wide reveal">
+        <div class="icon">⚡️</div>
+        <h3>Быстрый.</h3>
+        <p>XTLS Vision и BBR на сервере: видео в высоком качестве и звонки без задержек.</p>
+      </div>
+      <div class="tile reveal">
+        <div class="icon">📱</div>
+        <h3>На всех устройствах.</h3>
+        <p>iPhone, Android, Mac, Windows. До {{ max_keys }} ключей на аккаунт.</p>
+      </div>
+      <div class="tile reveal">
+        <div class="icon">🔒</div>
+        <h3>Приватный.</h3>
+        <p>Для регистрации нужна только почта. Каждый ключ виден только вам.</p>
+      </div>
+      <div class="tile reveal">
+        <div class="icon">✨</div>
+        <h3>Подключение за минуту.</h3>
+        <p>Отсканируйте QR-код или скопируйте ссылку в приложение.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="center reveal">
+      <h2 class="title">Выберите свой тариф.</h2>
+      <p class="lead">Без автопродлений. Платите, только когда нужно.</p>
+    </div>
+    <div class="plans">
+      {% for p in plans %}
+      <div class="plan reveal{% if loop.index == 2 %} featured{% endif %}">
+        {% if loop.index == 2 %}<span class="badge">Популярный</span>{% endif %}
+        <h3>{{ p.title }}</h3>
+        <div class="price">{{ p.price }}&nbsp;<small>₽</small></div>
+        <div class="per">{{ (p.price * 30 / p.days) | round | int }} ₽ в месяц</div>
+        {% if me %}
+          <form method="post" action="{{ url_for('pay', code=p.code) }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <button class="btn btn-block" type="submit">Оплатить</button>
+          </form>
+        {% else %}
+          <a class="btn btn-block" href="{{ url_for('register') }}">Выбрать</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="how">
+  <div class="wrap">
+    <div class="center reveal">
+      <h2 class="title">Три шага до свободы.</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="num">1</div>
+        <h3>Зарегистрируйтесь</h3>
+        <p>Почта и пароль. Больше ничего.</p>
+      </div>
+      <div class="step reveal">
+        <div class="num">2</div>
+        <h3>Оплатите подписку</h3>
+        <p>Картой или через СБП. Доступ открывается сразу.</p>
+      </div>
+      <div class="step reveal">
+        <div class="num">3</div>
+        <h3>Получите ключ</h3>
+        <p>Создайте ключ в кабинете и добавьте его в приложение Hiddify, v2RayTun или v2rayNG.</p>
+      </div>
+    </div>
+    <div class="actions reveal">
+      <a class="btn" href="{{ url_for('account') if me else url_for('register') }}">Начать</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

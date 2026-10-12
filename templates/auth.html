@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Регистрация' if mode == 'register' else 'Вход' }} · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="auth">
+  <div class="auth-box">
+    <span class="brand-mark" style="display:inline-block;width:44px;height:44px;border-radius:12px"></span>
+    <h1 class="title" style="margin-top:18px">
+      {{ 'Создайте аккаунт' if mode == 'register' else 'Вход в ' ~ site_name }}
+    </h1>
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      {% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
+      <div class="field">
+        <input id="email" name="email" type="email" placeholder=" " value="{{ email or '' }}" required autocomplete="email" autofocus>
+        <label for="email">Почта</label>
+      </div>
+      <div class="field">
+        <input id="password" name="password" type="password" placeholder=" " required minlength="{{ 8 if mode == 'register' else 1 }}"
+               autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}">
+        <label for="password">Пароль{% if mode == 'register' %} (от 8 символов){% endif %}</label>
+      </div>
+      {% if mode == 'register' %}
+      <div class="field">
+        <input id="password2" name="password2" type="password" placeholder=" " required minlength="8" autocomplete="new-password">
+        <label for="password2">Повторите пароль</label>
+      </div>
+      {% endif %}
+      <button class="btn btn-block" type="submit" style="margin-top:10px">
+        {{ 'Зарегистрироваться' if mode == 'register' else 'Войти' }}
+      </button>
+    </form>
+    <p class="alt-link">
+      {% if mode == 'register' %}
+        Уже есть аккаунт? <a href="{{ url_for('login') }}">Войти</a>
+      {% else %}
+        Нет аккаунта? <a href="{{ url_for('register') }}">Создать</a>
+      {% endif %}
+    </p>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Оплата · {{ site_name }}{% endblock %}
+{% block content %}
+<section class="auth">
+  <div class="auth-box">
+    <p class="eyebrow">Тестовая оплата</p>
+    <h1 class="title">{{ p.amount }} ₽</h1>
+    <p class="lead">Подписка на {{ plan.title if plan else p.days ~ ' дн.' }}</p>
+    {% if p.applied %}
+      <p class="alt-link">Этот платёж уже проведён.</p>
+      <a class="btn btn-block" style="margin-top:30px" href="{{ url_for('account') }}">В кабинет</a>
+    {% else %}
+      <form method="post">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button class="btn btn-block" type="submit">Оплатить (тест)</button>
+      </form>
+      <p class="alt-link">Это заглушка вместо платёжной системы: деньги не списываются.
+        Чтобы принимать настоящие платежи, включите ЮKassa (см. README).</p>
+      <p class="alt-link"><a href="{{ url_for('account') }}">Отмена</a></p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

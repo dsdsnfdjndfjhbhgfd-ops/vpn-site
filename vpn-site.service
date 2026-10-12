@@ -1,0 +1,15 @@
+[Unit]
+Description=Сайт для продажи ключей VPN
+After=network-online.target xray.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/vpn-site.env
+WorkingDirectory=/opt/vpn-site
+ExecStart=/opt/vpn-site/venv/bin/gunicorn -w 2 --threads 4 -b 127.0.0.1:8000 app:app
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

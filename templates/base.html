@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% if payment_mode == 'test' %}
+  <div class="test-banner">Тестовый режим оплаты: деньги не списываются.</div>
+{% endif %}
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark"></span>{{ site_name }}</a>
+    <div class="nav-links">
+      <a class="hide-sm" href="{{ url_for('index') }}#features">Возможности</a>
+      <a class="hide-sm" href="{{ url_for('index') }}#pricing">Тарифы</a>
+      <a class="hide-sm" href="{{ url_for('index') }}#how">Как подключиться</a>
+      {% if me %}
+        <a href="{{ url_for('account') }}">Кабинет</a>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button class="linklike" type="submit">Выйти</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('login') }}">Войти</a>
+        <a class="btn btn-sm" href="{{ url_for('register') }}">Регистрация</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<main>{% block content %}{% endblock %}</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <span>© {{ year }} {{ site_name }}. Все права защищены.</span>
+    <span>Ключи выдаются только на ваши устройства. Не передавайте их другим.</span>
+  </div>
+</footer>
+<script>
+  // Плавное появление блоков при прокрутке
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('shown'); io.unobserve(e.target); }
+  }), { threshold: 0.15 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  // Копирование ключа
+  document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(b.dataset.copy);
+    const t = b.textContent; b.textContent = 'Скопировано ✓';
+    setTimeout(() => b.textContent = t, 1600);
+  }));
+</script>
+</body>
+</html>
