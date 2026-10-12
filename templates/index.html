@@ -24,7 +24,7 @@
       <div class="trust reveal">
         <span>{{ ui.icon('check') }}Без автопродлений</span>
         <span>{{ ui.icon('check') }}Только почта для входа</span>
-        <span>{{ ui.icon('check') }}До {{ max_keys }} устройств</span>
+        <span>{{ ui.icon('check') }}{% if max_keys == 1 %}1 устройство{% else %}До {{ max_keys }} устройств{% endif %}</span>
       </div>
     </div>
 
@@ -59,7 +59,7 @@
 
 <section class="stats-band">
   <div class="stats-grid reveal">
-    <div class="stat-cell"><b><span data-count="{{ max_keys }}">{{ max_keys }}</span></b><span>устройства на аккаунт</span></div>
+    <div class="stat-cell"><b><span data-count="{{ max_keys }}">{{ max_keys }}</span></b><span>{{ max_keys | plural('устройство', 'устройства', 'устройств') }} на подписку</span></div>
     <div class="stat-cell"><b><span data-count="{{ ns.min }}">{{ ns.min }}</span> ₽</b><span>в месяц на самом выгодном тарифе</span></div>
     <div class="stat-cell"><b><span data-count="4">4</span></b><span>платформы: iOS, Android, Mac, Windows</span></div>
     <div class="stat-cell"><b>1 мин</b><span>от регистрации до ключа</span></div>
@@ -101,7 +101,7 @@
       <div class="tile spot reveal">
         <div class="icon">{{ ui.icon('devices') }}</div>
         <h3>На всех устройствах.</h3>
-        <p>iPhone, Android, Mac, Windows. До {{ max_keys }} ключей на аккаунт.</p>
+        <p>iPhone, Android, Mac, Windows. {% if max_keys == 1 %}Ключ подходит для любого из них, а сменить устройство можно в кабинете.{% else %}До {{ max_keys }} ключей на аккаунт.{% endif %}</p>
       </div>
       <div class="tile spot reveal">
         <div class="icon">{{ ui.icon('lock') }}</div>
@@ -168,8 +168,14 @@
       </details>
       <details class="reveal">
         <summary>На скольких устройствах можно пользоваться?</summary>
-        <div class="answer">До {{ max_keys }} устройств на один аккаунт. Для каждого устройства создаётся свой ключ, ненужный можно удалить в кабинете и создать новый.</div>
+        <div class="answer">{% if max_keys == 1 %}На одном: одна подписка даёт один ключ для одного устройства. Чтобы перейти на другое устройство, удалите ключ в кабинете и создайте новый.{% else %}До {{ max_keys }} устройств на один аккаунт. Для каждого устройства создаётся свой ключ, ненужный можно удалить в кабинете и создать новый.{% endif %}</div>
       </details>
+      {% if device_limit %}
+      <details class="reveal">
+        <summary>Можно ли дать ключ другу?</summary>
+        <div class="answer">Нет. Ключ работает только на одном устройстве одновременно. Если пользоваться им на двух устройствах сразу, ключ отключится на {{ ban_minutes }} минут, а при повторном нарушении будет удалён без возможности создать новый. Другу лучше оформить свою подписку.</div>
+      </details>
+      {% endif %}
       <details class="reveal">
         <summary>Какие приложения нужны?</summary>
         <div class="answer">На iPhone и iPad: v2RayTun или Streisand из App Store. На Android: v2rayNG или Hiddify. На Mac и Windows: Hiddify с сайта hiddify.com.</div>

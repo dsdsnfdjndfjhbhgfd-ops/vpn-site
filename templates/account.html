@@ -22,14 +22,30 @@
           <p>{% if user.paid_until %}Закончилась {{ user.paid_until | date }}. {% endif %}Оплатите, чтобы получить ключи.</p>
         {% endif %}
       </div>
-      {% if payments_on %}<a class="btn {{ 'btn-ghost' if active }}" href="#plans">{{ 'Продлить' if active else 'Оформить' }}</a>{% endif %}
+      {% if payments_on and not user.revoked %}<a class="btn {{ 'btn-ghost' if active }}" href="#plans">{{ 'Продлить' if active else 'Оформить' }}</a>{% endif %}
     </div>
 
     <h2 class="section-title" id="keys">Ключи</h2>
     {% if not keys_on %}
       <div class="card empty"><div class="icon">{{ ui.icon('key') }}</div>Выдача ключей скоро откроется.</div>
+    {% elif user.revoked %}
+      <div class="card notice danger">
+        <h3>Доступ закрыт</h3>
+        <p>Ключ снова использовался на нескольких устройствах одновременно, поэтому он удалён, и создать новый нельзя. Если это ошибка, напишите администратору.</p>
+      </div>
     {% elif active %}
-      <p class="muted" style="margin-top:6px">Один ключ на устройство, до {{ max_keys }} штук. После окончания подписки ключи отключаются. Нажмите на QR-код, чтобы увеличить его.</p>
+      <p class="muted" style="margin-top:6px">
+        {% if max_keys == 1 %}Один ключ на подписку.{% else %}Один ключ на устройство, до {{ max_keys }} штук.{% endif %}
+        {% if device_limit %}Ключ работает только на одном устройстве одновременно.{% endif %}
+        После окончания подписки ключи отключаются. Нажмите на QR-код, чтобы увеличить его.
+      </p>
+      {% for b in bans %}
+        <div class="card notice warn">
+          <h3>Ключ «{{ b.name }}» временно отключён</h3>
+          <p>Он работал на двух устройствах одновременно. Ключ снова заработает через {{ b.minutes }} {{ b.minutes | plural('минуту', 'минуты', 'минут') }}.
+            Пользуйтесь им только на одном устройстве: при повторном нарушении ключ будет удалён без возможности создать новый.</p>
+        </div>
+      {% endfor %}
       <div class="keys">
         {% for k in keys %}
         <div class="card key spot">
@@ -47,12 +63,15 @@
           </div>
         </div>
         {% else %}
-        <div class="card empty"><div class="icon">{{ ui.icon('key') }}</div>Ключей пока нет. Создайте первый ниже.</div>
+          {% if not bans %}
+          <div class="card empty"><div class="icon">{{ ui.icon('key') }}</div>Ключей пока нет. Создайте его ниже.</div>
+          {% endif %}
         {% endfor %}
       </div>
-      {% if keys | length < max_keys %}
+      {% if keys | length + bans | length < max_keys %}
       <div class="card">
         <h3>Новый ключ</h3>
+        {% if device_limit %}<p class="muted" style="margin-top:6px">Если включить ключ на двух устройствах сразу, он отключится на {{ ban_minutes }} минут, а при повторе будет удалён.</p>{% endif %}
         <form class="inline-form" method="post" action="{{ url_for('key_create') }}">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <input name="name" placeholder="Имя устройства, например iphone" pattern="[A-Za-z0-9_\-]{1,20}"
@@ -65,9 +84,11 @@
       <div class="card empty"><div class="icon">{{ ui.icon('card') }}</div>Ключи появятся здесь после оплаты подписки.</div>
     {% endif %}
 
+    {% if not user.revoked %}
     <h2 class="section-title" id="plans">{{ 'Продлить подписку' if active else 'Тарифы' }}</h2>
     {% if active %}<p class="muted" style="margin-top:6px">Дни добавятся к текущей подписке.</p>{% endif %}
     {{ ui.plan_cards(plans) }}
+    {% endif %}
 
     <h2 class="section-title">Как подключиться</h2>
     <div class="apps">

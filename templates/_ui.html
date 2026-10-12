@@ -16,7 +16,7 @@
     <div class="price"><span data-count="{{ p.price }}">{{ p.price }}</span>&nbsp;<small>₽</small></div>
     <div class="per">{{ per | round | int }} ₽ в месяц</div>
     <ul>
-      <li>До {{ max_keys }} устройств</li>
+      <li>{% if max_keys == 1 %}1 устройство{% else %}До {{ max_keys }} устройств{% endif %}</li>
       <li>VLESS Reality + XTLS Vision</li>
       <li>Без автопродления</li>
     </ul>

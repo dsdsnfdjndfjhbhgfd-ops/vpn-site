@@ -641,6 +641,10 @@ p { margin: 0; }
 }
 .key .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 @media (max-width: 600px) { .key { grid-template-columns: 1fr; } .key img { margin: 0 auto; } }
+.notice h3 { font-size: 19px; }
+.notice p { color: var(--text-2); margin-top: 6px; }
+.notice.warn { border-color: rgba(255, 181, 71, 0.4); background: linear-gradient(120deg, rgba(255, 181, 71, 0.1), var(--card) 60%); }
+.notice.danger { border-color: rgba(255, 91, 107, 0.45); background: linear-gradient(120deg, rgba(255, 91, 107, 0.12), var(--card) 60%); }
 .empty {
   text-align: center; color: var(--text-2); padding: 46px 20px;
   border-style: dashed; border-color: var(--line-2); background: transparent;
