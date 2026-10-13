@@ -196,7 +196,15 @@ main() {
     TEST_ID=$(sed -n 's/^TEST_ID=//p' "$STATE")
     PBK=$(sed -n 's/^PBK=//p' "$STATE"); SID=$(sed -n 's/^SID=//p' "$STATE")
     SNI=$(sed -n 's/^SNI=//p' "$STATE")
-    sed -i "s/^IP=.*/IP=$IP/" "$STATE"
+    # Если VPN работает через российский сервер (use-bridge.sh), его адрес и настройки не трогаем
+    BRIDGE_IP=$(sed -n 's/^BRIDGE_IP=//p' "$STATE")
+    if [ -n "$BRIDGE_IP" ]; then
+      echo "VPN работает через российский сервер $BRIDGE_IP: адрес в ключах оставляю его"
+      IP=$BRIDGE_IP
+      domain="${BRIDGE_IP//./-}.sslip.io"
+    else
+      sed -i "s/^IP=.*/IP=$IP/" "$STATE"
+    fi
   else
     make_keys /usr/local/bin/xray
     TEST_ID=$(cat /proc/sys/kernel/random/uuid)
@@ -246,7 +254,7 @@ KEYS_ENABLED=1
 EOF
     chmod 600 "$ENV_FILE"
   fi
-  sed -i "s#^BASE_URL=.*#BASE_URL=https://$domain:8443#" "$ENV_FILE"
+  [ -n "${BRIDGE_IP:-}" ] || sed -i "s#^BASE_URL=.*#BASE_URL=https://$domain:8443#" "$ENV_FILE"
   cp "$SITE_DIR/vpn-site.service" /etc/systemd/system/vpn-site.service
   systemctl daemon-reload
   systemctl enable vpn-site >/dev/null 2>&1
@@ -256,7 +264,11 @@ EOF
   install_caddy
   # Порт 443 занят VPN, поэтому сайт на 8443. Порт 80 нужен для получения сертификата.
   mkdir -p /etc/caddy
-  printf '{\n\thttps_port 8443\n}\n\n%s {\n\treverse_proxy 127.0.0.1:8000\n}\n' "$domain" > /etc/caddy/Caddyfile
+  if [ -n "${BRIDGE_IP:-}" ] && [ -f /etc/caddy/Caddyfile ]; then
+    echo "Caddyfile настроен под российский сервер: оставляю как есть"
+  else
+    printf '{\n\thttps_port 8443\n}\n\n%s {\n\treverse_proxy 127.0.0.1:8000\n}\n' "$domain" > /etc/caddy/Caddyfile
+  fi
   systemctl enable caddy >/dev/null 2>&1
   systemctl restart caddy
 
