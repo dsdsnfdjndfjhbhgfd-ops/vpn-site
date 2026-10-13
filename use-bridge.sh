@@ -84,30 +84,41 @@ $domains {
 EOF
 }
 
+# Маскировка, выбранная через set-mask.sh под сайт (не «self»), — её сохраняем
+site_mask() {
+  local m
+  m=$(sed -n 's/^MASK=//p' "$STATE")
+  [ -n "$m" ] && [ "$m" != self ] && echo "$m" || true
+}
+
 # Xray: только через российский сервер, маскировка под его адрес, сертификат берётся у Caddy.
+# Если через set-mask.sh выбрана маскировка под сайт ($2 не пуст), её оставляем как есть.
 update_xray_config() {
-  local bridge_domain=$1
-  python3 - "$CONF" "$bridge_domain" <<'PY'
+  local bridge_domain=$1 keep_mask=${2:-}
+  python3 - "$CONF" "$bridge_domain" "$keep_mask" <<'PY'
 import json, sys
-path, domain = sys.argv[1], sys.argv[2]
+path, domain, keep = sys.argv[1], sys.argv[2], sys.argv[3]
 c = json.load(open(path))
 ib = c["inbounds"][0]
 ss = ib.setdefault("streamSettings", {})
 ss.setdefault("sockopt", {})["acceptProxyProtocol"] = True
-r = ss["realitySettings"]
-r.pop("target", None)
-r["dest"] = "127.0.0.1:8443"
-names = [n for n in r.get("serverNames", []) if n != domain]
-r["serverNames"] = [domain] + names
+if not keep:
+    r = ss["realitySettings"]
+    r.pop("target", None)
+    r["dest"] = "127.0.0.1:8443"
+    names = [n for n in r.get("serverNames", []) if n != domain]
+    r["serverNames"] = [domain] + names
 c.setdefault("log", {})["loglevel"] = "warning"
-json.dump(c, open(path, "w"), indent=2)
+with open(path + ".new", "w") as f:
+    json.dump(c, f, indent=2)
 PY
 }
 
 update_state() {
-  local bridge_ip=$1 bridge_domain=$2
+  local bridge_ip=$1 bridge_domain=$2 keep_mask=${3:-}
   grep -q '^MAIN_IP=' "$STATE" || echo "MAIN_IP=$(sed -n 's/^IP=//p' "$STATE")" >> "$STATE"
-  sed -i "s/^IP=.*/IP=$bridge_ip/; s/^SNI=.*/SNI=$bridge_domain/" "$STATE"
+  sed -i "s/^IP=.*/IP=$bridge_ip/" "$STATE"
+  [ -n "$keep_mask" ] || sed -i "s/^SNI=.*/SNI=$bridge_domain/" "$STATE"
   if grep -q '^BRIDGE_IP=' "$STATE"; then
     sed -i "s/^BRIDGE_IP=.*/BRIDGE_IP=$bridge_ip/" "$STATE"
   else
@@ -154,11 +165,22 @@ $(printf '%s\n' "$err" | grep -iE 'error' | tail -3)"
   echo "  сертификат получен"
 
   step "Переключаю VPN на работу через $bridge_ip"
+  local mask
+  mask=$(site_mask)
+  [ -z "$mask" ] || echo "  маскировка под $mask (выбрана через set-mask.sh) сохраняется"
+  # Тот же замок, что у сайта (conf_lock в app.py): пока он у нас, сайт не правит конфиг
+  exec 9>"$CONF.lock"
+  flock 9
   cp "$CONF" "$CONF.bak"
-  update_xray_config "$bridge_domain"
-  "$XRAY" run -test -c "$CONF" >/dev/null || { cp "$CONF.bak" "$CONF"; die "Xray не принял настройки, вернул прежние"; }
-  chown nobody:nogroup "$CONF" 2>/dev/null || true
-  update_state "$bridge_ip" "$bridge_domain"
+  update_xray_config "$bridge_domain" "$mask"
+  # Расширение .json обязательно: по нему Xray понимает формат файла
+  mv -f "$CONF.new" "$CONF.check.json"
+  "$XRAY" run -test -c "$CONF.check.json" >/dev/null \
+    || { rm -f "$CONF.check.json"; die "Xray не принял настройки, ничего не изменено"; }
+  chmod 600 "$CONF.check.json"
+  chown nobody:nogroup "$CONF.check.json" 2>/dev/null || true
+  mv -f "$CONF.check.json" "$CONF"
+  update_state "$bridge_ip" "$bridge_domain" "$mask"
   sed -i "s#^BASE_URL=.*#BASE_URL=https://$bridge_domain:8443#" "$ENV_FILE"
   systemctl restart xray
   systemctl restart vpn-site
@@ -173,6 +195,7 @@ $(printf '%s\n' "$err" | grep -iE 'error' | tail -3)"
 
 ========================================================================
 Готово: VPN работает через российский сервер $bridge_ip.
+Маскировка: $(sed -n 's/^SNI=//p' "$STATE")
 
 Сайт:   https://$bridge_domain:8443
 Ключи:  в кабинете на сайте. Старые ключи в приложениях больше не работают:
