@@ -13,6 +13,7 @@ import fcntl
 import grp
 import hashlib
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -48,7 +49,17 @@ DATA_DIR = os.getenv("DATA_DIR", "/var/lib/vpn-site")
 DB = os.path.join(DATA_DIR, "site.db")
 SITE_NAME = os.getenv("SITE_NAME", "Tunnel")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")
-MAX_KEYS = int(os.getenv("MAX_KEYS", "3"))
+MAX_KEYS = int(os.getenv("MAX_KEYS", "1"))
+# Один ключ — одно устройство. Раз в SHARE_CHECK_SEC сайт спрашивает у Xray, с каких IP
+# сейчас работает каждый ключ. Если ключ дольше SHARE_MINUTES минут подряд работает
+# из двух разных сетей, это нарушение: в первый раз ключ отключается на BAN_MINUTES минут,
+# во второй удаляется, и создать новый человек уже не может (вернуть доступ можно в /admin).
+DEVICE_LIMIT = os.getenv("DEVICE_LIMIT", "1") == "1"
+SHARE_MINUTES = int(os.getenv("SHARE_MINUTES", "6"))
+BAN_MINUTES = int(os.getenv("BAN_MINUTES", "15"))
+SHARE_CHECK_SEC = int(os.getenv("SHARE_CHECK_SEC", "30"))
+# Адрес API Xray; сайт сам включает его в конфиге, если API ещё нет
+XRAY_API = os.getenv("XRAY_API", "127.0.0.1:10085")
 # test — кнопка «оплатить» сразу продлевает подписку (для проверки);
 # yookassa — настоящая оплата через ЮKassa
 PAYMENT = os.getenv("PAYMENT_PROVIDER", "test").strip().lower()
@@ -95,7 +106,9 @@ CREATE TABLE IF NOT EXISTS users (
   pw_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   paid_until INTEGER NOT NULL DEFAULT 0,
-  blocked INTEGER NOT NULL DEFAULT 0
+  blocked INTEGER NOT NULL DEFAULT 0,
+  strikes INTEGER NOT NULL DEFAULT 0,  -- сколько раз ключом пользовались на двух устройствах
+  revoked INTEGER NOT NULL DEFAULT 0   -- 1: ключ удалён за нарушение, новый создать нельзя
 );
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
@@ -107,6 +120,13 @@ CREATE TABLE IF NOT EXISTS payments (
   provider TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   applied INTEGER NOT NULL DEFAULT 0
+);
+-- Ключи, временно отключённые за работу на двух устройствах
+CREATE TABLE IF NOT EXISTS key_bans (
+  email TEXT PRIMARY KEY,           -- имя ключа в Xray, например w12_iphone
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  client TEXT NOT NULL,             -- запись ключа из конфига Xray: вернём её как была
+  until INTEGER NOT NULL
 );
 """
 
@@ -134,6 +154,11 @@ def close_db(_exc):
 
 with connect() as _con:
     _con.executescript(SCHEMA)
+    # Базы, созданные до появления этих колонок
+    _cols = {r["name"] for r in _con.execute("PRAGMA table_info(users)")}
+    for _col in ("strikes", "revoked"):
+        if _col not in _cols:
+            _con.execute(f"ALTER TABLE users ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
 
 
 def now() -> int:
@@ -190,8 +215,10 @@ def clients(conf: dict) -> list:
     return conf["inbounds"][0]["settings"]["clients"]
 
 
-def save_conf_and_restart(conf: dict) -> None:
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CONF))
+def save_conf(conf: dict) -> None:
+    """Проверяет конфиг через xray -test и записывает его. Xray не перезапускает."""
+    # Расширение .json обязательно: по нему Xray понимает формат файла
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CONF), suffix=".json")
     with os.fdopen(fd, "w") as f:
         json.dump(conf, f, indent=2, ensure_ascii=False)
     try:
@@ -207,7 +234,63 @@ def save_conf_and_restart(conf: dict) -> None:
     if os.path.exists(CONF):
         shutil.copy2(CONF, CONF + ".bak")
     os.replace(tmp, CONF)
+
+
+def save_conf_and_restart(conf: dict) -> None:
+    """Перезапуск рвёт на секунду связь у всех, зато сразу отключает удалённые ключи."""
+    save_conf(conf)
     subprocess.run(RESTART_CMD, check=True)
+
+
+def api_addr(conf: dict) -> str | None:
+    """Адрес API Xray из конфига: поле api.listen или отдельный вход с тегом API."""
+    api = conf.get("api") or {}
+    if api.get("listen"):
+        return api["listen"]
+    for ib in conf.get("inbounds", []):
+        if api.get("tag") and ib.get("tag") == api["tag"]:
+            return f"{ib.get('listen') or '127.0.0.1'}:{ib['port']}"
+    return None
+
+
+def xray_api(conf: dict, cmd: str, *args: str) -> str:
+    addr = api_addr(conf)
+    if not addr:
+        raise RuntimeError("в конфиге Xray нет API")
+    r = subprocess.run([XRAY_BIN, "api", cmd, f"--server={addr}", *args],
+                       capture_output=True, text=True, timeout=15)
+    if r.returncode:
+        raise RuntimeError((r.stderr or r.stdout).strip())
+    return r.stdout
+
+
+def add_client(client: dict, limit: int | None = None) -> str:
+    """Добавляет ключ в конфиг и в работающий Xray через API, без перезапуска.
+    Если API недоступно, перезапускает Xray, как раньше.
+    С limit проверяет, что у человека ещё нет столько ключей. Возвращает ok, exists или limit."""
+    with conf_lock():
+        conf = load_conf()
+        if any(c["email"] == client["email"] for c in clients(conf)):
+            return "exists"
+        owner = re.match(r"^w\d+_", client["email"]).group(0)
+        if limit is not None and sum(c["email"].startswith(owner) for c in clients(conf)) >= limit:
+            return "limit"
+        clients(conf).append(client)
+        save_conf(conf)
+        ib = conf["inbounds"][0]
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
+                json.dump({"inbounds": [{"tag": ib["tag"], "protocol": ib["protocol"],
+                                         "port": ib["port"],
+                                         "settings": {"clients": [client], "decryption": "none"}}]}, f)
+                f.flush()
+                out = xray_api(conf, "adu", f.name)
+            if "Added 1 user" not in out:
+                raise RuntimeError(out.strip())
+        except (RuntimeError, KeyError, subprocess.TimeoutExpired) as e:
+            log.warning("xray api adu failed (%s), restarting xray", e)
+            subprocess.run(RESTART_CMD, check=True)
+    return "ok"
 
 
 def prefix(uid: int) -> str:
@@ -251,22 +334,176 @@ def remove_user_keys(uids: set) -> int:
 
 
 def sweep_expired() -> None:
-    """Раз в 5 минут убирает ключи у тех, чья подписка кончилась или кто заблокирован."""
+    """Убирает ключи у тех, чья подписка кончилась или кто заблокирован."""
+    con = connect()
+    rows = con.execute("SELECT id FROM users WHERE paid_until <= ? OR blocked=1",
+                       (now(),)).fetchall()
+    con.close()
+    expired = {r["id"] for r in rows}
+    have = {int(m.group(1)) for c in clients(load_conf())
+            if (m := re.match(r"^w(\d+)_", c["email"]))}
+    n = remove_user_keys(expired & have)
+    if n:
+        log.info("removed %d keys of expired users", n)
+
+
+# ---------- один ключ — одно устройство ----------
+
+def ensure_xray_api() -> bool:
+    """Включает в Xray API и учёт адресов, с которых работают ключи (нужен свежий Xray, проверено на 26.3).
+    Конфиг правится и Xray перезапускается только один раз, при первом запуске."""
+    with conf_lock():
+        conf = load_conf()
+        changed = False
+        ib = conf["inbounds"][0]
+        if not ib.get("tag"):
+            ib["tag"] = "vless-in"
+            changed = True
+        api = conf.setdefault("api", {})
+        if not api:
+            api.update(tag="api", listen=XRAY_API)
+            changed = True
+        services = api.setdefault("services", [])
+        for name in ("HandlerService", "StatsService"):
+            if name not in services:
+                services.append(name)
+                changed = True
+        if not api_addr(conf):
+            api["listen"] = XRAY_API
+            changed = True
+        if "stats" not in conf:
+            conf["stats"] = {}
+            changed = True
+        level = conf.setdefault("policy", {}).setdefault("levels", {}).setdefault("0", {})
+        if not level.get("statsUserOnline"):
+            level["statsUserOnline"] = True
+            changed = True
+        if changed:
+            log.info("enabling xray api and online stats")
+            save_conf_and_restart(conf)
+            time.sleep(2)
+    try:
+        online_ips("w0_check")
+        return True
+    except RuntimeError as e:
+        log.error("xray api is not working, device limit is off: %s", e)
+        return False
+
+
+def online_ips(email: str) -> dict:
+    """IP, с которых ключ сейчас подключён: {ip: когда появился}."""
+    try:
+        out = xray_api(load_conf(), "statsonlineiplist", "-email", email)
+    except RuntimeError as e:
+        if "not found" in str(e):
+            return {}
+        raise
+    return json.loads(out).get("ips") or {}
+
+
+def network_of(ip: str) -> str:
+    """Адреса из одной подсети /24 (IPv6: /64) считаем одним устройством: так мобильный
+    интернет, который иногда меняет адрес внутри своей сети, не даёт ложных срабатываний."""
+    addr = ipaddress.ip_address(ip)
+    return str(ipaddress.ip_network(f"{ip}/{24 if addr.version == 4 else 64}", strict=False))
+
+
+_shared_since: dict = {}
+
+
+def check_sharing() -> None:
+    t = now()
+    for c in clients(load_conf()):
+        email = c["email"]
+        if not re.match(r"^w\d+_", email):
+            continue  # ключи бота не трогаем
+        nets = {network_of(ip) for ip in online_ips(email)}
+        if len(nets) < 2:
+            _shared_since.pop(email, None)
+            continue
+        since = _shared_since.setdefault(email, t)
+        if t - since >= SHARE_MINUTES * 60:
+            _shared_since.pop(email, None)
+            punish(email, nets)
+
+
+def punish(email: str, nets: set) -> None:
+    uid = int(re.match(r"^w(\d+)_", email).group(1))
+    con = connect()
+    try:
+        user = con.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if user is None:
+            return
+        if user["strikes"] == 0:
+            with conf_lock():
+                conf = load_conf()
+                client = next((c for c in clients(conf) if c["email"] == email), None)
+                if client is None:
+                    return
+                conf["inbounds"][0]["settings"]["clients"] = [
+                    c for c in clients(conf) if c["email"] != email]
+                save_conf_and_restart(conf)
+            with con:
+                con.execute("INSERT OR REPLACE INTO key_bans (email, user_id, client, until) "
+                            "VALUES (?, ?, ?, ?)",
+                            (email, uid, json.dumps(client), now() + BAN_MINUTES * 60))
+                con.execute("UPDATE users SET strikes=1 WHERE id=?", (uid,))
+            log.warning("key %s used from %s: disabled for %d min", email, sorted(nets), BAN_MINUTES)
+        else:
+            remove_user_keys({uid})
+            with con:
+                con.execute("UPDATE users SET strikes=strikes+1, revoked=1 WHERE id=?", (uid,))
+                con.execute("DELETE FROM key_bans WHERE user_id=?", (uid,))
+            log.warning("key %s used from %s again: keys removed, access revoked",
+                        email, sorted(nets))
+    finally:
+        con.close()
+
+
+def lift_bans(uid: int | None = None) -> None:
+    """Возвращает ключи, у которых кончился срок отключения (или все ключи человека)."""
+    con = connect()
+    try:
+        if uid is None:
+            rows = con.execute("SELECT * FROM key_bans WHERE until <= ?", (now(),)).fetchall()
+        else:
+            rows = con.execute("SELECT * FROM key_bans WHERE user_id=?", (uid,)).fetchall()
+        for r in rows:
+            user = con.execute("SELECT * FROM users WHERE id=?", (r["user_id"],)).fetchone()
+            if user and is_active(user) and not user["blocked"] and not user["revoked"]:
+                add_client(json.loads(r["client"]))
+                log.info("key %s is back", r["email"])
+            with con:
+                con.execute("DELETE FROM key_bans WHERE email=?", (r["email"],))
+    finally:
+        con.close()
+
+
+def background() -> None:
+    """Фоновая работа. Сайт запущен в нескольких процессах, а работать должен только один:
+    кто первым взял блокировку, тот и следит."""
+    lock = open(os.path.join(DATA_DIR, "background.lock"), "w")
     while True:
         try:
-            con = connect()
-            rows = con.execute("SELECT id FROM users WHERE paid_until <= ? OR blocked=1",
-                               (now(),)).fetchall()
-            con.close()
-            expired = {r["id"] for r in rows}
-            have = {int(m.group(1)) for c in clients(load_conf())
-                    if (m := re.match(r"^w(\d+)_", c["email"]))}
-            n = remove_user_keys(expired & have)
-            if n:
-                log.info("removed %d keys of expired users", n)
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            time.sleep(60)
+    api_ready, api_retry, last_sweep = False, 0.0, 0.0
+    while True:
+        try:
+            if time.time() - last_sweep >= 300:
+                last_sweep = time.time()
+                sweep_expired()
+            lift_bans()
+            if DEVICE_LIMIT and not api_ready and time.time() >= api_retry:
+                api_ready = ensure_xray_api()
+                api_retry = time.time() + 3600
+            if DEVICE_LIMIT and api_ready:
+                check_sharing()
         except Exception:
-            log.exception("sweep failed")
-        time.sleep(300)
+            log.exception("background task failed")
+        time.sleep(SHARE_CHECK_SEC)
 
 
 # ---------- ЮKassa ----------
@@ -362,7 +599,19 @@ def inject():
     return {"csrf_token": csrf_token, "asset": asset, "site_name": SITE_NAME, "plans": PLANS.values(),
             "me": current_user(), "payment_mode": PAYMENT,
             "payments_on": PAYMENTS_ENABLED, "keys_on": KEYS_ENABLED, "max_keys": MAX_KEYS,
+            "device_limit": DEVICE_LIMIT, "ban_minutes": BAN_MINUTES,
             "year": datetime.now().year}
+
+
+@app.template_filter("plural")
+def plural(n: int, one: str, few: str, many: str) -> str:
+    """1 устройство, 2 устройства, 5 устройств"""
+    n = abs(int(n))
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
 
 
 @app.template_filter("date")
@@ -454,8 +703,11 @@ def account():
             keys.append({**k, "link": link, "qr": qr_svg(link)})
     payments = con.execute("SELECT * FROM payments WHERE user_id=? AND status='succeeded' "
                            "ORDER BY created_at DESC LIMIT 10", (user["id"],)).fetchall()
+    bans = [{"name": b["email"][len(prefix(user["id"])):],
+             "minutes": max(1, -(-(b["until"] - now()) // 60))}
+            for b in con.execute("SELECT * FROM key_bans WHERE user_id=?", (user["id"],))]
     return render_template("account.html", user=user, active=is_active(user),
-                           keys=keys, payments=payments)
+                           keys=keys, payments=payments, bans=bans)
 
 
 @app.post("/keys")
@@ -464,31 +716,37 @@ def key_create():
     if not KEYS_ENABLED:
         flash("Выдача ключей скоро откроется.")
         return redirect(url_for("account"))
+    if g.user["revoked"]:
+        flash("Доступ закрыт: ключ использовался на нескольких устройствах одновременно.")
+        return redirect(url_for("account"))
     if not is_active(g.user):
         flash("Сначала оформите подписку.")
         return redirect(url_for("account") + "#plans")
+    banned = db().execute("SELECT COUNT(*) FROM key_bans WHERE user_id=?",
+                          (g.user["id"],)).fetchone()[0]
+    if banned:
+        flash("Ключ временно отключён. Новый можно будет создать, когда он снова заработает.")
+        return redirect(url_for("account"))
     name = request.form.get("name", "").strip() or "device"
     if not NAME_RE.match(name):
         flash("Имя ключа: латиница, цифры, «-» или «_», до 20 символов.")
         return redirect(url_for("account"))
-    email = prefix(g.user["id"]) + name
-    with conf_lock():
-        conf = load_conf()
-        mine = [c for c in clients(conf) if c["email"].startswith(prefix(g.user["id"]))]
-        if len(mine) >= MAX_KEYS:
-            flash(f"Можно не больше {MAX_KEYS} ключей. Удалите ненужный.")
-            return redirect(url_for("account"))
-        if any(c["email"] == email for c in mine):
-            flash("Ключ с таким именем уже есть.")
-            return redirect(url_for("account"))
-        clients(conf).append({"id": str(uuidlib.uuid4()), "email": email,
-                              "flow": "xtls-rprx-vision"})
-        try:
-            save_conf_and_restart(conf)
-        except subprocess.CalledProcessError:
-            log.exception("xray config failed")
-            flash("Не удалось создать ключ. Попробуйте позже.")
-            return redirect(url_for("account"))
+    client = {"id": str(uuidlib.uuid4()), "email": prefix(g.user["id"]) + name,
+              "flow": "xtls-rprx-vision"}
+    try:
+        res = add_client(client, limit=MAX_KEYS)
+    except subprocess.CalledProcessError:
+        log.exception("xray config failed")
+        flash("Не удалось создать ключ. Попробуйте позже.")
+        return redirect(url_for("account"))
+    if res == "limit":
+        flash("Можно создать только один ключ. Чтобы подключить другое устройство, "
+              "удалите старый ключ." if MAX_KEYS == 1 else
+              f"Можно не больше {MAX_KEYS} ключей. Удалите ненужный.")
+        return redirect(url_for("account"))
+    if res == "exists":
+        flash("Ключ с таким именем уже есть.")
+        return redirect(url_for("account"))
     flash(f"Ключ «{name}» готов.")
     return redirect(url_for("account") + "#keys")
 
@@ -513,6 +771,9 @@ def key_delete(name):
 @login_required
 def pay(code):
     plan = PLANS.get(code) or abort(404)
+    if g.user["revoked"]:
+        flash("Доступ закрыт: ключ использовался на нескольких устройствах одновременно.")
+        return redirect(url_for("account"))
     if not PAYMENTS_ENABLED:
         flash("Оплата скоро откроется.")
         return redirect(url_for("account"))
@@ -588,8 +849,12 @@ def admin():
                             (now(), 30 * 86400, uid))
             elif act == "stop":
                 con.execute("UPDATE users SET paid_until=0 WHERE id=?", (uid,))
+            elif act == "pardon":
+                con.execute("UPDATE users SET strikes=0, revoked=0 WHERE id=?", (uid,))
         if act in ("block", "stop") and KEYS_ENABLED:
             remove_user_keys({uid})
+        if act == "pardon" and KEYS_ENABLED:
+            lift_bans(uid)
         return redirect(url_for("admin"))
     users = con.execute("SELECT * FROM users ORDER BY id DESC LIMIT 500").fetchall()
     counts: dict = {}
@@ -604,7 +869,7 @@ def admin():
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 if os.getenv("SWEEPER", "1") == "1" and KEYS_ENABLED:
-    threading.Thread(target=sweep_expired, daemon=True).start()
+    threading.Thread(target=background, daemon=True).start()
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8000, debug=False)

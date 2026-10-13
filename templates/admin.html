@@ -8,7 +8,7 @@
     <p class="lead">Всего: {{ users | length }}. Оплачено за всё время: {{ income }} ₽.</p>
     <div class="card table-scroll">
       <table>
-        <tr><th>ID</th><th>Почта</th><th>Подписка</th><th>Ключей</th><th></th></tr>
+        <tr><th>ID</th><th>Почта</th><th>Подписка</th><th>Ключей</th><th>Нарушения</th><th></th></tr>
         {% for u in users %}
         <tr>
           <td>{{ u.id }}</td>
@@ -19,9 +19,16 @@
             {% else %}<span class="pill">нет</span>{% endif %}
           </td>
           <td>{{ counts.get(u.id, 0) }}</td>
+          <td>
+            {% if u.revoked %}<span class="pill off">ключ удалён</span>
+            {% elif u.strikes %}<span class="pill">предупреждён</span>
+            {% else %}—{% endif %}
+          </td>
           <td style="white-space:nowrap">
-            {% for act, label in [('add30', '+30 дней'), ('stop', 'Снять подписку'),
-                                  ('unblock' if u.blocked else 'block', 'Разблокировать' if u.blocked else 'Заблокировать')] %}
+            {% set acts = [('add30', '+30 дней'), ('stop', 'Снять подписку'),
+                           ('unblock' if u.blocked else 'block', 'Разблокировать' if u.blocked else 'Заблокировать')] %}
+            {% if u.strikes or u.revoked %}{% set acts = acts + [('pardon', 'Вернуть доступ')] %}{% endif %}
+            {% for act, label in acts %}
             <form method="post">
               <input type="hidden" name="csrf" value="{{ csrf_token() }}">
               <input type="hidden" name="uid" value="{{ u.id }}">
