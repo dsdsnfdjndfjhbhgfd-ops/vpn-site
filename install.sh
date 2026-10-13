@@ -80,6 +80,60 @@ EOF
   chown nobody:nogroup "$CONF" 2>/dev/null || true
 }
 
+# Caddy пробуем поставить по очереди: из репозитория системы, из репозитория Caddy
+# (dl.cloudsmith.io часто недоступен с серверов в России) и готовым файлом с GitHub.
+install_caddy() {
+  command -v caddy >/dev/null && return 0
+  echo "Пробую из репозитория системы…"
+  apt-get install -y -q caddy && return 0
+  echo "Пробую из репозитория Caddy…"
+  if curl -1sLf --max-time 30 https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
+       | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+     && curl -1sLf --max-time 30 https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
+       > /etc/apt/sources.list.d/caddy-stable.list \
+     && apt-get update -q && apt-get install -y -q caddy; then
+    return 0
+  fi
+  rm -f /etc/apt/sources.list.d/caddy-stable.list
+  apt-get update -q || true
+  echo "Скачиваю Caddy с GitHub…"
+  local arch ver
+  arch=$(dpkg --print-architecture)
+  ver=$(curl -fsSL --max-time 30 -o /dev/null -w '%{url_effective}' \
+          https://github.com/caddyserver/caddy/releases/latest | sed -n 's#.*/tag/v##p') || true
+  [ -n "$ver" ] || ver=2.10.2
+  curl -fsSL --max-time 300 \
+      "https://github.com/caddyserver/caddy/releases/download/v$ver/caddy_${ver}_linux_${arch}.tar.gz" \
+    | tar -xz -C /usr/bin caddy || die "не удалось скачать Caddy"
+  chmod +x /usr/bin/caddy
+  getent group caddy >/dev/null || groupadd --system caddy
+  id caddy >/dev/null 2>&1 || useradd --system --gid caddy --create-home --home-dir /var/lib/caddy \
+    --shell /usr/sbin/nologin caddy
+  mkdir -p /etc/caddy
+  cat > /etc/systemd/system/caddy.service <<'UNIT'
+[Unit]
+Description=Caddy
+After=network.target network-online.target
+Requires=network-online.target
+
+[Service]
+Type=notify
+User=caddy
+Group=caddy
+ExecStart=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+PrivateTmp=true
+ProtectSystem=full
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+}
+
 main() {
   local admin=${1:-} domain=${2:-}
   [ "$(id -u)" = 0 ] || die "запустите от root"
@@ -88,6 +142,8 @@ main() {
 
   step "Ставлю пакеты"
   export DEBIAN_FRONTEND=noninteractive
+  # Хвост неудачной прошлой установки: недоступный репозиторий Caddy ломает apt-get update
+  command -v caddy >/dev/null || rm -f /etc/apt/sources.list.d/caddy-stable.list
   apt-get update -q
   apt-get install -y -q curl unzip openssl python3 python3-venv ca-certificates gnupg \
     debian-keyring debian-archive-keyring apt-transport-https
@@ -146,15 +202,9 @@ EOF
   systemctl restart vpn-site
 
   step "Ставлю Caddy (HTTPS для сайта)"
-  if ! command -v caddy >/dev/null; then
-    curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
-      | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-    curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
-      > /etc/apt/sources.list.d/caddy-stable.list
-    apt-get update -q
-    apt-get install -y -q caddy
-  fi
+  install_caddy
   # Порт 443 занят VPN, поэтому сайт на 8443. Порт 80 нужен для получения сертификата.
+  mkdir -p /etc/caddy
   printf '{\n\thttps_port 8443\n}\n\n%s {\n\treverse_proxy 127.0.0.1:8000\n}\n' "$domain" > /etc/caddy/Caddyfile
   systemctl enable caddy >/dev/null 2>&1
   systemctl restart caddy
