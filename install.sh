@@ -21,8 +21,9 @@ ENV_FILE=/etc/vpn-site.env
 # блокировку apt. Ждём, пока она закончит, а не падаем.
 wait_apt() {
   local waited=0
-  while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 \
-        || pgrep -x unattended-upgr >/dev/null || pgrep -x apt-get >/dev/null || pgrep -x dpkg >/dev/null; do
+  # Смотрим только на файлы блокировки. По имени процесса нельзя: служба
+  # unattended-upgrade-shutdown висит всегда и тоже называется «unattended-upgr».
+  while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1; do
     [ "$waited" = 0 ] && echo "Система ставит обновления, жду, пока закончит (обычно 5–15 минут)…"
     sleep 10; waited=$((waited + 10))
     if [ "$waited" -ge 1800 ]; then
