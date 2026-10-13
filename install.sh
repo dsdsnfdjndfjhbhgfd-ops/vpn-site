@@ -206,8 +206,21 @@ main() {
   systemctl enable xray >/dev/null 2>&1
   systemctl restart xray
 
-  step "Включаю BBR (быстрее на плохих сетях)"
-  printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' > /etc/sysctl.d/99-vpn-bbr.conf
+  step "Настраиваю сеть для скорости (BBR, буферы TCP)"
+  # BBR держит скорость на сетях с потерями; большие буферы нужны для быстрой
+  # загрузки на дальнем расстоянии; mtu_probing спасает на мобильных сетях с урезанным MTU
+  cat > /etc/sysctl.d/99-vpn-bbr.conf <<'SYSCTL'
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+net.core.rmem_max=67108864
+net.core.wmem_max=67108864
+net.ipv4.tcp_rmem=4096 131072 67108864
+net.ipv4.tcp_wmem=4096 65536 67108864
+net.ipv4.tcp_mtu_probing=1
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_slow_start_after_idle=0
+net.ipv4.tcp_notsent_lowat=16384
+SYSCTL
   sysctl --system >/dev/null 2>&1 || true
 
   step "Ставлю сайт"
