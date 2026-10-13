@@ -136,7 +136,7 @@ KEYS_ENABLED=0
 ```
 bash <(curl -fsSL https://raw.githubusercontent.com/dsdsnfdjndfjhbhgfd-ops/vpn-site/main/set-mask.sh)
 ```
-Скрипт перебирает `ya.ru`, `vk.com`, `dzen.ru`, `rutube.ru`, `max.ru`, `www.ozon.ru`, `www.avito.ru`, `www.wildberries.ru` и берёт первый, который подходит для REALITY (TLS 1.3, HTTP/2, X25519 — проверяется через `openssl s_client` с основного сервера). Можно указать сайт сам: `... set-mask.sh vk.com`. Вернуть маскировку под свой адрес: `... set-mask.sh self`.
+Скрипт перебирает `ya.ru`, `vk.com`, `dzen.ru`, `rutube.ru`, `max.ru`, `www.ozon.ru`, `www.avito.ru`, `www.wildberries.ru` и берёт первый, который подходит для REALITY (TLS 1.3, HTTP/2, X25519 — проверяется через `openssl s_client` с основного сервера). Можно указать сайт сам: `... set-mask.sh vk.com`. Маскировка под адрес своего сайта (из `BASE_URL`, со своим сертификатом): `... set-mask.sh self`. Выбор запоминается (`MASK=` в `vpn-state`), и повторный запуск `use-bridge.sh` его не сбрасывает.
 
 Оператор видит подключение к выбранному сайту, а тот, кто проверит сервер, получает ответ настоящего сайта. Ключи в кабинете обновляются сами (`sni=` в ссылке), в приложениях их нужно скопировать заново.
 
