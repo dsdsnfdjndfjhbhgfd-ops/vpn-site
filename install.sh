@@ -35,6 +35,24 @@ wait_apt() {
 
 apt-get() { wait_apt; command apt-get -o DPkg::Lock::Timeout=600 "$@"; }
 
+is_public_ip() {
+  [ -n "${1:-}" ] && python3 -c 'import ipaddress, sys; sys.exit(0 if ipaddress.ip_address(sys.argv[1]).is_global else 1)' "$1" 2>/dev/null
+}
+
+# Адрес, по которому к серверу подключаются снаружи. Внешний сервис «какой у меня IP»
+# не годится первым: у некоторых хостингов исходящий трафик идёт через другой адрес.
+# Порядок: SERVER_IP=…, адрес из текущего SSH-подключения, адрес сетевой карты, внешний сервис.
+detect_ip() {
+  local ip
+  if [ -n "${SERVER_IP:-}" ]; then echo "$SERVER_IP"; return; fi
+  ip=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
+  if is_public_ip "$ip"; then echo "$ip"; return; fi
+  for ip in $(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1); do
+    if is_public_ip "$ip"; then echo "$ip"; return; fi
+  done
+  curl -4 -fsS --max-time 10 https://api.ipify.org || curl -4 -fsS --max-time 10 https://ifconfig.me
+}
+
 step() { printf '\n\033[1;35m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -166,7 +184,7 @@ main() {
   apt-get install -y -q curl unzip openssl python3 python3-venv ca-certificates gnupg \
     debian-keyring debian-archive-keyring apt-transport-https
 
-  IP=$(curl -4 -fsS --max-time 10 https://api.ipify.org || curl -4 -fsS --max-time 10 https://ifconfig.me) \
+  IP=$(detect_ip) \
     || die "не удалось узнать IP сервера"
   [ -n "$domain" ] || domain="${IP//./-}.sslip.io"
   echo "IP сервера: $IP, адрес сайта: $domain"
@@ -178,6 +196,7 @@ main() {
     TEST_ID=$(sed -n 's/^TEST_ID=//p' "$STATE")
     PBK=$(sed -n 's/^PBK=//p' "$STATE"); SID=$(sed -n 's/^SID=//p' "$STATE")
     SNI=$(sed -n 's/^SNI=//p' "$STATE")
+    sed -i "s/^IP=.*/IP=$IP/" "$STATE"
   else
     make_keys /usr/local/bin/xray
     TEST_ID=$(cat /proc/sys/kernel/random/uuid)
@@ -214,6 +233,7 @@ KEYS_ENABLED=1
 EOF
     chmod 600 "$ENV_FILE"
   fi
+  sed -i "s#^BASE_URL=.*#BASE_URL=https://$domain:8443#" "$ENV_FILE"
   cp "$SITE_DIR/vpn-site.service" /etc/systemd/system/vpn-site.service
   systemctl daemon-reload
   systemctl enable vpn-site >/dev/null 2>&1
