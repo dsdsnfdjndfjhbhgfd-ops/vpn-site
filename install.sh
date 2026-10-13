@@ -116,12 +116,43 @@ EOF
   chown nobody:nogroup "$CONF" 2>/dev/null || true
 }
 
-# Caddy пробуем поставить по очереди: из репозитория системы, из репозитория Caddy
-# (dl.cloudsmith.io часто недоступен с серверов в России) и готовым файлом с GitHub.
+CADDY=${CADDY:-caddy}
+
+# Caddy из репозитория Ubuntu 24.04 — старая версия 2.6, а приём настоящего адреса
+# посетителя (proxy_protocol) появился в 2.7. Старую версию заменяем свежей с GitHub.
+caddy_too_old() {
+  local v
+  v=$("$CADDY" version 2>/dev/null | sed -n 's/^v\([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
+  [ -z "$v" ] && return 0
+  set -- $v
+  [ "$1" -lt 2 ] || { [ "$1" -eq 2 ] && [ "$2" -lt 7 ]; }
+}
+
+upgrade_caddy() {
+  local bin arch ver tmp
+  bin=$(command -v "$CADDY" || echo /usr/bin/caddy)
+  arch=$(dpkg --print-architecture 2>/dev/null || echo amd64)
+  ver=$(curl -fsSL --max-time 30 -o /dev/null -w '%{url_effective}' \
+          https://github.com/caddyserver/caddy/releases/latest | sed -n 's#.*/tag/v##p') || true
+  [ -n "$ver" ] || ver=2.10.2
+  echo "Обновляю Caddy до $ver (была $("$CADDY" version 2>/dev/null | cut -d' ' -f1))…"
+  tmp=$(mktemp -d)
+  curl -fsSL --max-time 300 \
+      "https://github.com/caddyserver/caddy/releases/download/v$ver/caddy_${ver}_linux_${arch}.tar.gz" \
+    | tar -xz -C "$tmp" caddy || die "не удалось скачать Caddy с GitHub"
+  chmod +x "$tmp/caddy"
+  mv -f "$tmp/caddy" "$bin"
+  rmdir "$tmp" 2>/dev/null || true
+  # чтобы apt не вернул старую версию при обновлении системы
+  apt-mark hold caddy >/dev/null 2>&1 || true
+  echo "  Caddy: $("$bin" version | cut -d' ' -f1)"
+}
+
+# Caddy ставим из репозитория Caddy, а если он недоступен (dl.cloudsmith.io часто
+# недоступен с серверов в России) — готовым файлом с GitHub. Репозиторий Ubuntu не годится:
+# там Caddy 2.6, а для входа через российский сервер нужен proxy_protocol из 2.7+.
 install_caddy() {
   command -v caddy >/dev/null && return 0
-  echo "Пробую из репозитория системы…"
-  apt-get install -y -q caddy && return 0
   echo "Пробую из репозитория Caddy…"
   if curl -1sLf --max-time 30 https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
        | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
@@ -262,6 +293,7 @@ EOF
 
   step "Ставлю Caddy (HTTPS для сайта)"
   install_caddy
+  if caddy_too_old; then upgrade_caddy; fi
   # Порт 443 занят VPN, поэтому сайт на 8443. Порт 80 нужен для получения сертификата.
   mkdir -p /etc/caddy
   if [ -n "${BRIDGE_IP:-}" ] && [ -f /etc/caddy/Caddyfile ]; then
