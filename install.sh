@@ -17,6 +17,23 @@ STATE=$XRAY_DIR/vpn-state
 SITE_DIR=/opt/vpn-site
 ENV_FILE=/etc/vpn-site.env
 
+# На свежем сервере Ubuntu сама ставит обновления (unattended-upgrades) и держит
+# блокировку apt. Ждём, пока она закончит, а не падаем.
+wait_apt() {
+  local waited=0
+  while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 \
+        || pgrep -x unattended-upgr >/dev/null || pgrep -x apt-get >/dev/null || pgrep -x dpkg >/dev/null; do
+    [ "$waited" = 0 ] && echo "Система ставит обновления, жду, пока закончит (обычно 5–15 минут)…"
+    sleep 10; waited=$((waited + 10))
+    if [ "$waited" -ge 1800 ]; then
+      die "apt занят больше 30 минут, перезагрузите сервер (reboot) и запустите снова"
+    fi
+  done
+  return 0
+}
+
+apt-get() { wait_apt; command apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+
 step() { printf '\n\033[1;35m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
 
