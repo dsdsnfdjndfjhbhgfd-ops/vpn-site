@@ -60,6 +60,13 @@ site_domains() {
     | tr ' ' '\n' | grep -v '^$' | sort -u
 }
 
+# Если включён Trojan (trojan.sh): запросы по его секретному пути Caddy отдаёт в Xray
+trojan_route() {
+  local p
+  p=$(sed -n 's/^TROJAN_PATH=//p' "$STATE" 2>/dev/null || true)
+  [ -z "$p" ] || printf '\treverse_proxy %s 127.0.0.1:10443\n' "$p"
+}
+
 # Caddy: сайт отвечает и на адрес российского сервера; с российского сервера
 # приходит настоящий адрес посетителя (PROXY protocol), остальные подключения — как раньше.
 write_caddyfile() {
@@ -79,6 +86,7 @@ write_caddyfile() {
 }
 
 $domains {
+$(trojan_route)
 	reverse_proxy 127.0.0.1:8000
 }
 EOF

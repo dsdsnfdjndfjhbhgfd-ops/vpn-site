@@ -32,7 +32,7 @@ import uuid as uuidlib
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import qrcode
 import qrcode.image.svg
@@ -60,6 +60,8 @@ BAN_MINUTES = int(os.getenv("BAN_MINUTES", "15"))
 SHARE_CHECK_SEC = int(os.getenv("SHARE_CHECK_SEC", "30"))
 # Адрес API Xray; сайт сам включает его в конфиге, если API ещё нет
 XRAY_API = os.getenv("XRAY_API", "127.0.0.1:10085")
+# Вход Trojan внутри сайта (его добавляет trojan.sh): пускает по тем же ключам, что и VLESS
+TROJAN_TAG = "trojan-ws"
 # test — кнопка «оплатить» сразу продлевает подписку (для проверки);
 # yookassa — настоящая оплата через ЮKassa
 PAYMENT = os.getenv("PAYMENT_PROVIDER", "test").strip().lower()
@@ -215,8 +217,20 @@ def clients(conf: dict) -> list:
     return conf["inbounds"][0]["settings"]["clients"]
 
 
+def trojan_inbound(conf: dict) -> dict | None:
+    return next((ib for ib in conf.get("inbounds", []) if ib.get("tag") == TROJAN_TAG), None)
+
+
+def trojan_client(client: dict) -> dict:
+    """Ключ Trojan: пароль — id ключа, имя то же, поэтому учёт устройств общий."""
+    return {"password": client["id"], "email": client["email"]}
+
+
 def save_conf(conf: dict) -> None:
     """Проверяет конфиг через xray -test и записывает его. Xray не перезапускает."""
+    # Trojan всегда пускает ровно те ключи, что есть в VLESS: удаление и выдача — в одном месте
+    if (tj := trojan_inbound(conf)) is not None:
+        tj.setdefault("settings", {})["clients"] = [trojan_client(c) for c in clients(conf)]
     # Расширение .json обязательно: по нему Xray понимает формат файла
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CONF), suffix=".json")
     with os.fdopen(fd, "w") as f:
@@ -278,14 +292,17 @@ def add_client(client: dict, limit: int | None = None) -> str:
         clients(conf).append(client)
         save_conf(conf)
         ib = conf["inbounds"][0]
+        add = [{"tag": ib["tag"], "protocol": ib["protocol"], "port": ib["port"],
+                "settings": {"clients": [client], "decryption": "none"}}]
+        if (tj := trojan_inbound(conf)) is not None:
+            add.append({"tag": tj["tag"], "protocol": tj["protocol"], "port": tj["port"],
+                        "settings": {"clients": [trojan_client(client)]}})
         try:
             with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
-                json.dump({"inbounds": [{"tag": ib["tag"], "protocol": ib["protocol"],
-                                         "port": ib["port"],
-                                         "settings": {"clients": [client], "decryption": "none"}}]}, f)
+                json.dump({"inbounds": add}, f)
                 f.flush()
                 out = xray_api(conf, "adu", f.name)
-            if "Added 1 user" not in out:
+            if f"Added {len(add)} user" not in out:
                 raise RuntimeError(out.strip())
         except (RuntimeError, KeyError, subprocess.TimeoutExpired) as e:
             log.warning("xray api adu failed (%s), restarting xray", e)
@@ -308,6 +325,19 @@ def make_link(cid: str, label: str) -> str:
     return (f"vless://{cid}@{s['IP']}:{s['PORT']}?encryption=none&flow=xtls-rprx-vision"
             f"&security=reality&sni={s['SNI']}&fp=chrome&pbk={s['PBK']}&sid={s['SID']}"
             f"&type=tcp#{quote(label)}")
+
+
+def make_trojan_link(cid: str, label: str) -> str | None:
+    """Запасной ключ: Trojan внутри сайта. Снаружи это обычный HTTPS к сайту — тот же адрес,
+    порт и настоящий сертификат; VPN отвечает только по секретному пути."""
+    s = read_state()
+    site = urlsplit(BASE_URL)
+    if not s.get("TROJAN_PATH") or site.scheme != "https" or not site.hostname:
+        return None
+    host = site.hostname
+    return (f"trojan://{cid}@{s['IP']}:{site.port or 443}?security=tls&sni={host}&fp=chrome"
+            f"&alpn=http%2F1.1&type=ws&host={host}&path={quote(s['TROJAN_PATH'], safe='')}"
+            f"#{quote(label + '-trojan')}")
 
 
 def qr_svg(text: str) -> str:
@@ -700,7 +730,9 @@ def account():
     if is_active(user) and KEYS_ENABLED:
         for k in user_keys(user["id"]):
             link = make_link(k["id"], f"{SITE_NAME}-{k['name']}")
-            keys.append({**k, "link": link, "qr": qr_svg(link)})
+            trojan = make_trojan_link(k["id"], f"{SITE_NAME}-{k['name']}")
+            keys.append({**k, "link": link, "qr": qr_svg(link),
+                         "trojan": trojan, "trojan_qr": trojan and qr_svg(trojan)})
     payments = con.execute("SELECT * FROM payments WHERE user_id=? AND status='succeeded' "
                            "ORDER BY created_at DESC LIMIT 10", (user["id"],)).fetchall()
     bans = [{"name": b["email"][len(prefix(user["id"])):],

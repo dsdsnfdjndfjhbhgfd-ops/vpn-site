@@ -299,7 +299,14 @@ EOF
   if [ -n "${BRIDGE_IP:-}" ] && [ -f /etc/caddy/Caddyfile ]; then
     echo "Caddyfile настроен под российский сервер: оставляю как есть"
   else
-    printf '{\n\thttps_port 8443\n}\n\n%s {\n\treverse_proxy 127.0.0.1:8000\n}\n' "$domain" > /etc/caddy/Caddyfile
+    # Trojan (trojan.sh): запросы по его секретному пути — в Xray
+    local trojan_path
+    trojan_path=$(sed -n 's/^TROJAN_PATH=//p' "$STATE" 2>/dev/null || true)
+    {
+      printf '{\n\thttps_port 8443\n}\n\n%s {\n' "$domain"
+      [ -z "$trojan_path" ] || printf '\treverse_proxy %s 127.0.0.1:10443\n' "$trojan_path"
+      printf '\treverse_proxy 127.0.0.1:8000\n}\n'
+    } > /etc/caddy/Caddyfile
   fi
   systemctl enable caddy >/dev/null 2>&1
   systemctl restart caddy
