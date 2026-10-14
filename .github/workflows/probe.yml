@@ -12,21 +12,20 @@ jobs:
       - name: From GitHub
         run: |
           set +e
-          for t in 144.31.61.111:22 144.31.61.111:80 144.31.61.111:443 144.31.61.111:8443 153.52.95.88:22 153.52.95.88:80 153.52.95.88:443 153.52.95.88:8443; do
-            s=$(date +%s.%N)
-            if timeout 8 bash -c "</dev/tcp/${t%:*}/${t#*:}" 2>/dev/null; then r=open; else r=CLOSED; fi
-            echo "TCP $t $r $(python3 -c "print(round($(date +%s.%N)-$s,2))")s"
+          get() { curl -sS -o /dev/null -w "%{http_code} %{size_download}B %{time_total}s" --max-time 20 "$@" 2>&1 | tr '\n' ' '; echo; }
+          for path in / /static/style.css /static/app.js /login; do
+            for via in "144-31-61-111.sslip.io:8443:144.31.61.111|через RU-вход" "153-52-95-88.sslip.io:8443:153.52.95.88|напрямую на основной"; do
+              r=${via%|*}; name=${via#*|}; host=${r%%:*}
+              for proto in --http2 --http1.1; do
+                for i in 1 2; do
+                  echo "$path $name $proto #$i: $(get $proto --resolve "$r" "https://$host:8443$path")"
+                done
+              done
+            done
           done
-          for u in https://144-31-61-111.sslip.io:8443/ https://144-31-61-111.sslip.io:8443/login https://144-31-61-111.sslip.io:8443/register https://144-31-61-111.sslip.io:8443/static/style.css https://153-52-95-88.sslip.io:8443/login; do
-            echo "== $u"
-            curl -sS -o /tmp/b -D /tmp/h -w 'code=%{http_code} time=%{time_total}\n' --max-time 25 "$u"
-            head -5 /tmp/h; head -c 200 /tmp/b | tr '\n' ' '; echo
-          done
-          for t in 144.31.61.111:8443/144-31-61-111.sslip.io 153.52.95.88:8443/153-52-95-88.sslip.io 144.31.61.111:443/ya.ru; do
-            echo "== TLS ${t%/*} sni=${t#*/}"
-            echo | timeout 12 openssl s_client -connect "${t%/*}" -servername "${t#*/}" 2>&1 | grep -E 'subject=|issuer=|Verify return|Protocol|Cipher is|errno|error' | head -6
-          done
-          dig +short 144-31-61-111.sslip.io; dig +short 153-52-95-88.sslip.io
+          echo "== 100 КБ+ через RU-вход, обычный HTTP на порт 80 (тот же путь RU → основной, без TLS)"
+          get http://144-31-61-111.sslip.io/static/style.css
+          get http://153-52-95-88.sslip.io/static/style.css
       - name: From Russia (check-host.net)
         run: |
           python3 - <<'PY'
@@ -34,8 +33,8 @@ jobs:
           H = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
           def get(u):
               return json.load(urllib.request.urlopen(urllib.request.Request(u, headers=H), timeout=30))
-          checks = [("http", "https://144-31-61-111.sslip.io:8443/"), ("http", "https://144-31-61-111.sslip.io:8443/login"),
-                    ("tcp", "144.31.61.111:443")]
+          checks = [("http", "https://144-31-61-111.sslip.io:8443/static/style.css"),
+                    ("http", "https://153-52-95-88.sslip.io:8443/static/style.css")]
           reqs = []
           for kind, host in checks:
               try:
