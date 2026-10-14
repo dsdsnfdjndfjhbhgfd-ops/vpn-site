@@ -2,17 +2,43 @@
 {% block title %}Админка · {{ site_name }}{% endblock %}
 {% block content %}
 <section class="page">
+  {% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
   <div class="wrap">
     <p class="eyebrow">Админка</p>
     <h1 class="title">Пользователи</h1>
     <p class="lead">Всего: {{ users | length }}. Оплачено за всё время: {{ income }} ₽.</p>
+    <div class="admin-tools">
+      <div class="card">
+        <h3>Выдать подписку</h3>
+        <p class="muted">Дни добавляются к текущей подписке. От 1 до {{ max_days }} дней.</p>
+        <form class="inline-form" method="post">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <input type="email" name="email" placeholder="Почта пользователя" required>
+          <input type="number" name="days" min="1" max="{{ max_days }}" value="30" required class="days">
+          <button class="btn" name="action" value="days">Выдать</button>
+        </form>
+      </div>
+      {% if i_am_owner %}
+      <div class="card">
+        <h3>Выдать админку</h3>
+        <p class="muted">Админ может выдавать подписки и управлять пользователями. Выдавать админку может только владелец.</p>
+        <form class="inline-form" method="post">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <input type="email" name="email" placeholder="Почта пользователя" required>
+          <button class="btn" name="action" value="make_admin">Сделать админом</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
     <div class="card table-scroll">
       <table>
         <tr><th>ID</th><th>Почта</th><th>Подписка</th><th>Ключей</th><th>Нарушения</th><th></th></tr>
         {% for u in users %}
         <tr>
           <td>{{ u.id }}</td>
-          <td>{{ u.email }}</td>
+          <td>{{ u.email }}
+            {% if u.email in owners %}<span class="pill on">владелец</span>
+            {% elif u.is_admin %}<span class="pill on">админ</span>{% endif %}</td>
           <td>
             {% if u.blocked %}<span class="pill off">заблокирован</span>
             {% elif u.paid_until > now %}<span class="pill on">до {{ u.paid_until | date }}</span>
@@ -25,9 +51,16 @@
             {% else %}—{% endif %}
           </td>
           <td style="white-space:nowrap">
-            {% set acts = [('add30', '+30 дней'), ('stop', 'Снять подписку'),
+            <form method="post" class="days-form">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <input type="hidden" name="uid" value="{{ u.id }}">
+              <input type="number" name="days" min="1" max="{{ max_days }}" value="30" aria-label="Дней">
+              <button class="linklike" name="action" value="days" style="font-size:13px;margin-right:10px">дней выдать</button>
+            </form>
+            {% set acts = [('stop', 'Снять подписку'),
                            ('unblock' if u.blocked else 'block', 'Разблокировать' if u.blocked else 'Заблокировать')] %}
             {% if u.strikes or u.revoked %}{% set acts = acts + [('pardon', 'Вернуть доступ')] %}{% endif %}
+            {% if i_am_owner and u.email not in owners %}{% set acts = acts + [('drop_admin', 'Забрать админку') if u.is_admin else ('make_admin', 'Сделать админом')] %}{% endif %}
             {% for act, label in acts %}
             <form method="post">
               <input type="hidden" name="csrf" value="{{ csrf_token() }}">

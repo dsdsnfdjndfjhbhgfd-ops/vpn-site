@@ -676,6 +676,13 @@ th { color: var(--text-3); font-weight: 500; font-size: 13px; text-transform: up
 tbody tr, table tr { transition: background 0.2s; }
 td form { display: inline; }
 .table-scroll { overflow-x: auto; }
+.admin-tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin: 24px 0; }
+.admin-tools p { margin-top: 6px; }
+.inline-form input.days { flex: 0 0 110px; min-width: 0; }
+.days-form input[type=number] {
+  width: 64px; height: 30px; padding: 0 8px; margin-right: 4px; border-radius: 8px;
+  border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 13px;
+}
 .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgba(255, 255, 255, 0.06); }
 .pill.on { background: rgba(62, 224, 143, 0.14); color: var(--green); }
 .pill.off { background: rgba(255, 91, 107, 0.14); color: var(--red); }
