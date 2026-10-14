@@ -303,7 +303,7 @@ EOF
     local trojan_path
     trojan_path=$(sed -n 's/^TROJAN_PATH=//p' "$STATE" 2>/dev/null || true)
     {
-      printf '{\n\thttps_port 8443\n}\n\n%s {\n' "$domain"
+      printf '{\n\thttps_port 8443\n}\n\n%s {\n\tencode zstd gzip\n' "$domain"
       [ -z "$trojan_path" ] || printf '\treverse_proxy %s 127.0.0.1:10443\n' "$trojan_path"
       printf '\treverse_proxy 127.0.0.1:8000\n}\n'
     } > /etc/caddy/Caddyfile
