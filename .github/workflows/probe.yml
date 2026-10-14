@@ -1,0 +1,60 @@
+# Временная проверка доступности сайта и VPN снаружи (с GitHub и из России через check-host.net)
+name: Probe
+on:
+  push:
+    branches: [claude/adoring-fermat-vlr60u]
+    paths: [.github/workflows/probe.yml]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: From GitHub
+        run: |
+          set +e
+          for t in 144.31.61.111:22 144.31.61.111:80 144.31.61.111:443 144.31.61.111:8443 153.52.95.88:22 153.52.95.88:80 153.52.95.88:443 153.52.95.88:8443; do
+            s=$(date +%s.%N)
+            if timeout 8 bash -c "</dev/tcp/${t%:*}/${t#*:}" 2>/dev/null; then r=open; else r=CLOSED; fi
+            echo "TCP $t $r $(python3 -c "print(round($(date +%s.%N)-$s,2))")s"
+          done
+          for u in https://144-31-61-111.sslip.io:8443/ https://153-52-95-88.sslip.io:8443/ http://144-31-61-111.sslip.io/ http://153-52-95-88.sslip.io/; do
+            echo "== $u"
+            curl -sS -o /tmp/b -D /tmp/h -w 'code=%{http_code} time=%{time_total}\n' --max-time 25 "$u"
+            head -5 /tmp/h; head -c 200 /tmp/b | tr '\n' ' '; echo
+          done
+          for t in 144.31.61.111:8443/144-31-61-111.sslip.io 153.52.95.88:8443/153-52-95-88.sslip.io 144.31.61.111:443/ya.ru; do
+            echo "== TLS ${t%/*} sni=${t#*/}"
+            echo | timeout 12 openssl s_client -connect "${t%/*}" -servername "${t#*/}" 2>&1 | grep -E 'subject=|issuer=|Verify return|Protocol|Cipher is|errno|error' | head -6
+          done
+          dig +short 144-31-61-111.sslip.io; dig +short 153-52-95-88.sslip.io
+      - name: From Russia (check-host.net)
+        run: |
+          python3 - <<'PY'
+          import json, time, urllib.request
+          H = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+          def get(u):
+              return json.load(urllib.request.urlopen(urllib.request.Request(u, headers=H), timeout=30))
+          checks = [("tcp", "144.31.61.111:8443"), ("tcp", "144.31.61.111:443"), ("tcp", "153.52.95.88:8443"),
+                    ("tcp", "153.52.95.88:443"), ("http", "https://144-31-61-111.sslip.io:8443/"),
+                    ("http", "https://153-52-95-88.sslip.io:8443/")]
+          reqs = []
+          for kind, host in checks:
+              try:
+                  r = get(f"https://check-host.net/check-{kind}?host={host}&max_nodes=100")
+                  reqs.append((kind, host, r["request_id"], r["nodes"]))
+              except Exception as e:
+                  print(kind, host, "request failed:", e)
+              time.sleep(2)
+          time.sleep(25)
+          for kind, host, rid, nodes in reqs:
+              try:
+                  res = get(f"https://check-host.net/check-result/{rid}")
+              except Exception as e:
+                  print(kind, host, "result failed:", e); continue
+              print(f"\n=== {kind} {host}")
+              for node, info in sorted(nodes.items(), key=lambda kv: (kv[1][0] != "ru", kv[0])):
+                  cc, city = info[0], info[2]
+                  if cc not in ("ru", "de", "nl", "fi", "us"):
+                      continue
+                  print(f"  {cc} {city:<16} {json.dumps(res.get(node), ensure_ascii=False)[:160]}")
+          PY
