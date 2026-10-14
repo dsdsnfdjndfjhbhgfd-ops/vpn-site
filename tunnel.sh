@@ -106,6 +106,8 @@ open(dst, "w").write("".join(out))
 PY
 }
 
+# aes128-gcm — самый быстрый шифр на процессорах с AES (почти все серверы): вдвое быстрее
+# шифра по умолчанию, это важно на дешёвых серверах с одним ядром. Остальные — запасные.
 write_unit() {
   local bridge=$1 fwd="" p ssh_bin
   for p in $TUNNEL_PORTS; do fwd="$fwd -R 127.0.0.1:${p#*:}:127.0.0.1:${p%%:*}"; done
@@ -118,7 +120,7 @@ Wants=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
-ExecStart=$ssh_bin -N -T -i $KEY -p $SSH_PORT -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$KEY.known_hosts$fwd $TUNNEL_USER@$bridge
+ExecStart=$ssh_bin -N -T -i $KEY -p $SSH_PORT -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$KEY.known_hosts -c aes128-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr -o IPQoS=throughput$fwd $TUNNEL_USER@$bridge
 Restart=always
 RestartSec=15
 LimitNOFILE=65536
