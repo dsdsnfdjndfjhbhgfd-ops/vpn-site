@@ -118,6 +118,7 @@ StartLimitIntervalSec=0
 ExecStart=$ssh_bin -N -T -i $KEY -p $SSH_PORT -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$KEY.known_hosts$fwd $TUNNEL_USER@$bridge
 Restart=always
 RestartSec=15
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
@@ -255,6 +256,10 @@ setup_user() {
     chmod 700 "$(dirname "$akf")"
   fi
   chmod 600 "$akf"
+  # через туннель идут все подключения телефонов: обычного лимита в 1024 открытых файла мало
+  if [ -d /etc/security/limits.d ]; then
+    printf '%s - nofile 65536\n' "$TUNNEL_USER" > /etc/security/limits.d/vpn-tunnel.conf
+  fi
   echo "  пользователь $TUNNEL_USER, ключ в $akf"
 }
 
@@ -277,8 +282,9 @@ check_sshd() {
   if [ -n "$port" ] && [ "$port" != "$SSH_PORT" ]; then
     echo "  SSH здесь на порту $port: на основном сервере запустите туннель с TUNNEL_SSH_PORT=$port"
   fi
-  if [ -d "$(dirname "$SSHD_DROPIN")" ] && [ ! -f "$SSHD_DROPIN" ]; then
-    printf '# vpn-tunnel: оборванные подключения закрываются за минуту и освобождают порты туннеля\nClientAliveInterval 20\nClientAliveCountMax 3\n' > "$SSHD_DROPIN"
+  if [ -d "$(dirname "$SSHD_DROPIN")" ]; then
+    # только для пользователя туннеля: ваши собственные SSH-сессии это не затрагивает
+    printf '# vpn-tunnel: оборванный туннель закрывается за минуту и освобождает свои порты\nMatch User %s\n    ClientAliveInterval 20\n    ClientAliveCountMax 3\nMatch all\n' "$TUNNEL_USER" > "$SSHD_DROPIN"
     if "$SSHD" -t 2>/dev/null; then
       systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
     else
