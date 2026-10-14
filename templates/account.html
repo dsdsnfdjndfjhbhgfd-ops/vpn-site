@@ -61,6 +61,17 @@
               </form>
             </div>
           </div>
+          {% if k.trojan %}
+          <div class="alt">
+            <img src="{{ k.trojan_qr }}" alt="QR-код ключа Trojan {{ k.name }}" data-zoom>
+            <div>
+              <h4>Запасной ключ: Trojan</h4>
+              <p class="muted">Если основной не подключается. Здесь VPN спрятан внутри нашего сайта и для оператора выглядит как обычное посещение сайта. Это тот же ключ, на то же устройство.</p>
+              <code>{{ k.trojan }}</code>
+              <button class="btn btn-sm" type="button" data-copy="{{ k.trojan }}">Скопировать Trojan</button>
+            </div>
+          </div>
+          {% endif %}
         </div>
         {% else %}
           {% if not bans %}

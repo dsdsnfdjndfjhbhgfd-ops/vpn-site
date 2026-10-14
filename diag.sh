@@ -9,7 +9,7 @@
 set -euo pipefail
 
 SECONDS_TO_CAPTURE=${SECONDS_TO_CAPTURE:-30}
-PORTS=${DIAG_PORTS:-"443 2053 47443"}
+PORTS=${DIAG_PORTS:-"443 2053 47443 8443"}
 HAPROXY_CFG=${HAPROXY_CFG:-/etc/haproxy/haproxy.cfg}
 PCAP=${PCAP:-/tmp/vpn-diag.pcap}
 
@@ -21,7 +21,7 @@ analyze() {
 import struct, sys, collections
 
 path, ports_arg = sys.argv[1], sys.argv[2]
-server_ports = {int(p) for p in ports_arg.split()} if ports_arg else {443, 2053, 47443}
+server_ports = {int(p) for p in ports_arg.split()} if ports_arg else {443, 2053, 47443, 8443}
 
 def packets(path):
     f = open(path, "rb")
