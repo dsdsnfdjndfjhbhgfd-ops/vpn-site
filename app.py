@@ -112,7 +112,8 @@ CREATE TABLE IF NOT EXISTS users (
   paid_until INTEGER NOT NULL DEFAULT 0,
   blocked INTEGER NOT NULL DEFAULT 0,
   strikes INTEGER NOT NULL DEFAULT 0,  -- сколько раз ключом пользовались на двух устройствах
-  revoked INTEGER NOT NULL DEFAULT 0   -- 1: ключ удалён за нарушение, новый создать нельзя
+  revoked INTEGER NOT NULL DEFAULT 0,  -- 1: ключ удалён за нарушение, новый создать нельзя
+  is_admin INTEGER NOT NULL DEFAULT 0  -- 1: админка выдана владельцем (владельцы — ADMIN_EMAILS)
 );
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
@@ -160,7 +161,7 @@ with connect() as _con:
     _con.executescript(SCHEMA)
     # Базы, созданные до появления этих колонок
     _cols = {r["name"] for r in _con.execute("PRAGMA table_info(users)")}
-    for _col in ("strikes", "revoked"):
+    for _col in ("strikes", "revoked", "is_admin"):
         if _col not in _cols:
             _con.execute(f"ALTER TABLE users ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
     # Секрет ссылки-подписки (/sub/<sub_token>); создаётся при первом заходе в кабинет
@@ -657,8 +658,9 @@ def asset(name: str) -> str:
 
 @app.context_processor
 def inject():
+    me = current_user()
     return {"csrf_token": csrf_token, "asset": asset, "site_name": SITE_NAME, "plans": PLANS.values(),
-            "me": current_user(), "payment_mode": PAYMENT,
+            "me": me, "me_admin": is_admin(me), "payment_mode": PAYMENT,
             "payments_on": PAYMENTS_ENABLED, "keys_on": KEYS_ENABLED, "max_keys": MAX_KEYS,
             "device_limit": DEVICE_LIMIT, "ban_minutes": BAN_MINUTES,
             "year": datetime.now().year}
@@ -917,31 +919,77 @@ def webhook():
 
 # ---------- админка ----------
 
+def is_owner(user) -> bool:
+    """Владельцы — почты из ADMIN_EMAILS: только они выдают и забирают админку."""
+    return user is not None and user["email"] in ADMIN_EMAILS
+
+
+def is_admin(user) -> bool:
+    return user is not None and (is_owner(user) or bool(user["is_admin"]))
+
+
+MAX_GRANT_DAYS = 3650
+
+
 @app.route("/admin", methods=["GET", "POST"])
 @login_required
 def admin():
-    if g.user["email"] not in ADMIN_EMAILS:
+    if not is_admin(g.user):
         abort(404)
     con = db()
     if request.method == "POST":
-        uid = int(request.form["uid"])
-        act = request.form["action"]
+        act = request.form.get("action", "")
+        if request.form.get("email"):
+            target = con.execute("SELECT * FROM users WHERE email=?",
+                                 (request.form["email"].strip().lower(),)).fetchone()
+            if target is None:
+                flash("Пользователя с такой почтой нет: пусть сначала зарегистрируется на сайте.")
+                return redirect(url_for("admin"))
+        else:
+            target = con.execute("SELECT * FROM users WHERE id=?",
+                                 (request.form.get("uid", type=int),)).fetchone() or abort(404)
+        uid = target["id"]
+        # Админ без прав владельца не трогает владельцев и других админов (кроме выдачи дней)
+        if act not in ("days", "add30") and is_admin(target) and not is_owner(g.user) and uid != g.user["id"]:
+            flash("Это может сделать только владелец сайта.")
+            return redirect(url_for("admin"))
+        if act in ("make_admin", "drop_admin") and not is_owner(g.user):
+            flash("Выдавать и забирать админку может только владелец сайта.")
+            return redirect(url_for("admin"))
+        days = 30 if act == "add30" else request.form.get("days", type=int)
+        if act in ("days", "add30") and not (days and 1 <= days <= MAX_GRANT_DAYS):
+            flash(f"Срок — от 1 до {MAX_GRANT_DAYS} дней.")
+            return redirect(url_for("admin"))
         with con:
             if act == "block":
                 con.execute("UPDATE users SET blocked=1 WHERE id=?", (uid,))
             elif act == "unblock":
                 con.execute("UPDATE users SET blocked=0 WHERE id=?", (uid,))
-            elif act == "add30":
+            elif act in ("days", "add30"):
                 con.execute("UPDATE users SET paid_until = MAX(paid_until, ?) + ? WHERE id=?",
-                            (now(), 30 * 86400, uid))
+                            (now(), days * 86400, uid))
             elif act == "stop":
                 con.execute("UPDATE users SET paid_until=0 WHERE id=?", (uid,))
             elif act == "pardon":
                 con.execute("UPDATE users SET strikes=0, revoked=0 WHERE id=?", (uid,))
+            elif act == "make_admin":
+                con.execute("UPDATE users SET is_admin=1 WHERE id=?", (uid,))
+            elif act == "drop_admin":
+                con.execute("UPDATE users SET is_admin=0 WHERE id=?", (uid,))
+            else:
+                abort(400)
         if act in ("block", "stop") and KEYS_ENABLED:
             remove_user_keys({uid})
         if act == "pardon" and KEYS_ENABLED:
             lift_bans(uid)
+        user = con.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if act in ("days", "add30"):
+            flash(f"{user['email']}: +{days} {plural(days, 'день', 'дня', 'дней')}, "
+                  f"подписка до {fmt_date(user['paid_until'])}.")
+        elif act == "make_admin":
+            flash(f"{user['email']} теперь админ.")
+        elif act == "drop_admin":
+            flash(f"{user['email']} больше не админ.")
         return redirect(url_for("admin"))
     users = con.execute("SELECT * FROM users ORDER BY id DESC LIMIT 500").fetchall()
     counts: dict = {}
@@ -951,7 +999,8 @@ def admin():
     income = con.execute("SELECT COALESCE(SUM(amount), 0) FROM payments "
                          "WHERE status='succeeded'").fetchone()[0]
     return render_template("admin.html", users=users, counts=counts, income=income,
-                           now=now())
+                           now=now(), owners=ADMIN_EMAILS, i_am_owner=is_owner(g.user),
+                           max_days=MAX_GRANT_DAYS)
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

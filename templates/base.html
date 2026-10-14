@@ -47,6 +47,7 @@
       <a href="{{ url_for('index') }}#faq">Вопросы</a>
       {% if me %}
         <a href="{{ url_for('account') }}">Кабинет</a>
+        {% if me_admin %}<a href="{{ url_for('admin') }}">Админка</a>{% endif %}
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <button class="linklike" type="submit">Выйти</button>
