@@ -729,10 +729,12 @@ def account():
     keys = []
     if is_active(user) and KEYS_ENABLED:
         for k in user_keys(user["id"]):
-            link = make_link(k["id"], f"{SITE_NAME}-{k['name']}")
-            trojan = make_trojan_link(k["id"], f"{SITE_NAME}-{k['name']}")
-            keys.append({**k, "link": link, "qr": qr_svg(link),
-                         "trojan": trojan, "trojan_qr": trojan and qr_svg(trojan)})
+            # Если включён Trojan (trojan.sh), выдаём только его: он идёт внутри сайта и
+            # проходит там, где VLESS режут. Без Trojan — VLESS, как раньше.
+            label = f"{SITE_NAME}-{k['name']}"
+            trojan = make_trojan_link(k["id"], label)
+            link = trojan or make_link(k["id"], label)
+            keys.append({**k, "link": link, "qr": qr_svg(link), "trojan": bool(trojan)})
     payments = con.execute("SELECT * FROM payments WHERE user_id=? AND status='succeeded' "
                            "ORDER BY created_at DESC LIMIT 10", (user["id"],)).fetchall()
     bans = [{"name": b["email"][len(prefix(user["id"])):],
