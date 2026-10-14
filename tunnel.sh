@@ -13,7 +13,9 @@
 # 2) На РОССИЙСКОМ сервере — эту команду (вида  … tunnel.sh ru 'ssh-ed25519 AAAA…').
 #
 # Если туннель пропадёт, российский сервер сам вернётся к прямой пересылке, как раньше.
-set -euo pipefail
+set -Eeuo pipefail
+# Если что-то не выполнится, скрипт не молчит: печатает строку и команду
+trap 'printf "\n\033[1;31mОшибка: не выполнилась команда (строка %s): %s\033[0m\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 REPO=dsdsnfdjndfjhbhgfd-ops/vpn-site
 RUN="bash <(curl -fsSL https://raw.githubusercontent.com/$REPO/main/tunnel.sh)"
@@ -29,6 +31,7 @@ SSHD=${SSHD:-sshd}
 KEY=${TUNNEL_KEY:-/root/.ssh/vpn_tunnel}
 UNIT=${TUNNEL_UNIT:-/etc/systemd/system/vpn-tunnel.service}
 TUNNEL_USER=${TUNNEL_USER:-vpntunnel}
+SSHD_T=""
 SSH_PORT=${TUNNEL_SSH_PORT:-22}
 # порт на основном сервере : порт туннеля на российском (там он слушает только 127.0.0.1)
 TUNNEL_PORTS=${TUNNEL_PORTS:-"443:20443 8443:20843 80:20080"}
@@ -67,10 +70,10 @@ tcp_open() { timeout 5 bash -c "</dev/tcp/$1/$2" 2>/dev/null; }
 
 # ---------- основной сервер ----------
 
-site_host() { sed -n 's#^BASE_URL=https://\([^:/]*\).*#\1#p' "$ENV_FILE" 2>/dev/null | head -n1; }
+site_host() { sed -n 's#^BASE_URL=https://\([^:/]*\).*#\1#p' "$ENV_FILE" 2>/dev/null | awk 'NR==1'; }
 site_port() {
   local p
-  p=$(sed -n 's#^BASE_URL=https://[^:/]*:\([0-9]*\).*#\1#p' "$ENV_FILE" 2>/dev/null | head -n1)
+  p=$(sed -n 's#^BASE_URL=https://[^:/]*:\([0-9]*\).*#\1#p' "$ENV_FILE" 2>/dev/null | awk 'NR==1')
   echo "${p:-443}"
 }
 
@@ -202,7 +205,7 @@ detect_ip() {
   if [ -n "${SERVER_IP:-}" ]; then echo "$SERVER_IP"; return; fi
   ip=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
   if [ -n "$ip" ] && [[ ! "$ip" =~ ^(10|127|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\. ]]; then echo "$ip"; return; fi
-  ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1
+  ip -4 -o addr show scope global 2>/dev/null | awk 'NR==1{print $4}' | cut -d/ -f1
 }
 
 # HAProxy: каждый «server main IP:порт» → сначала туннель, прямой путь — запасной.
@@ -236,14 +239,14 @@ PY
 # открыть на этом сервере порты туннеля на 127.0.0.1
 setup_user() {
   local pub=$1 home akf listen="" p
+  echo "  создаю пользователя $TUNNEL_USER…"
   id "$TUNNEL_USER" >/dev/null 2>&1 \
     || useradd --system --create-home --home-dir "/var/lib/$TUNNEL_USER" --shell /usr/sbin/nologin "$TUNNEL_USER"
   # «*» — пароля нет, но учётная запись не «заблокирована»: иначе sshd без PAM не пустит и по ключу
   usermod -p '*' "$TUNNEL_USER"
   home=$(getent passwd "$TUNNEL_USER" | cut -d: -f6)
   # где sshd ищет ключи этого пользователя (обычно ~/.ssh/authorized_keys)
-  akf=$("$SSHD" -T -C "user=$TUNNEL_USER,host=localhost,addr=127.0.0.1" 2>/dev/null \
-          | awk '$1=="authorizedkeysfile"{print $2; exit}')
+  akf=$(awk '$1=="authorizedkeysfile"{print $2}' <<<"$SSHD_T" | awk 'NR==1')
   akf=${akf:-.ssh/authorized_keys}
   akf=${akf//%h/$home}; akf=${akf//%u/$TUNNEL_USER}; akf=${akf//%%/%}
   [[ "$akf" = /* ]] || akf="$home/$akf"
@@ -267,8 +270,10 @@ setup_user() {
 # только добавляем проверку «жив ли собеседник», чтобы оборванный туннель освобождал порты.
 check_sshd() {
   local main_ip=$1 t fwd users
-  t=$("$SSHD" -T -C "user=$TUNNEL_USER,host=$main_ip,addr=$main_ip" 2>&1) \
+  echo "  проверяю настройки SSH…"
+  t=$(timeout 20 "$SSHD" -T -C "user=$TUNNEL_USER,host=$main_ip,addr=$main_ip" 2>&1) \
     || die "не удалось прочитать настройки SSH: $(printf '%s' "$t" | tail -1)"
+  SSHD_T=$t
   fwd=$(awk '$1=="allowtcpforwarding"{print $2}' <<<"$t")
   case "$fwd" in yes|all|remote) ;; *) die "в настройках SSH запрещены туннели (AllowTcpForwarding $fwd)" ;; esac
   [ "$(awk '$1=="disableforwarding"{print $2}' <<<"$t")" != yes ] || die "в настройках SSH запрещены туннели (DisableForwarding yes)"
@@ -285,12 +290,13 @@ check_sshd() {
   if [ -d "$(dirname "$SSHD_DROPIN")" ]; then
     # только для пользователя туннеля: ваши собственные SSH-сессии это не затрагивает
     printf '# vpn-tunnel: оборванный туннель закрывается за минуту и освобождает свои порты\nMatch User %s\n    ClientAliveInterval 20\n    ClientAliveCountMax 3\nMatch all\n' "$TUNNEL_USER" > "$SSHD_DROPIN"
-    if "$SSHD" -t 2>/dev/null; then
-      systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+    if timeout 20 "$SSHD" -t 2>/dev/null; then
+      timeout 30 systemctl reload ssh 2>/dev/null || timeout 30 systemctl reload sshd 2>/dev/null || true
     else
       rm -f "$SSHD_DROPIN"
     fi
   fi
+  echo "  настройки SSH: туннели разрешены"
 }
 
 ru_side() {
