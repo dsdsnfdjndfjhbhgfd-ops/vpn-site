@@ -137,7 +137,8 @@ restore() {
   cat "$CADDYFILE.trojan.bak" > "$CADDYFILE"
   cat "$STATE.trojan.bak" > "$STATE"
   $RESTART_CMD || true
-  $CADDY_RELOAD_CMD || true
+  # если Caddy к этому моменту остановлен, перечитать настройки он не сможет — тогда запускаем
+  $CADDY_RELOAD_CMD || systemctl restart caddy || true
 }
 
 # Новый код сайта: он добавляет и удаляет ключи сразу в обоих входах и показывает ключ Trojan

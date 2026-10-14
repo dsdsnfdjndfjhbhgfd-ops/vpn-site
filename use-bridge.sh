@@ -67,8 +67,9 @@ trojan_route() {
   [ -z "$p" ] || printf '\treverse_proxy %s 127.0.0.1:10443\n' "$p"
 }
 
-# Caddy: сайт отвечает и на адрес российского сервера; с российского сервера
-# приходит настоящий адрес посетителя (PROXY protocol), остальные подключения — как раньше.
+# Caddy: сайт отвечает и на адрес российского сервера; с российского сервера (и из обратного
+# туннеля tunnel.sh — он приходит с 127.0.0.1) приходит настоящий адрес посетителя (PROXY
+# protocol), остальные подключения — как раньше. Страницы сжимаются: меньше весят.
 write_caddyfile() {
   local bridge_ip=$1 domains=$2
   cat > "$CADDYFILE" <<EOF
@@ -78,7 +79,7 @@ write_caddyfile() {
 		listener_wrappers {
 			proxy_protocol {
 				timeout 5s
-				allow $bridge_ip/32
+				allow $bridge_ip/32 127.0.0.1/32
 			}
 			tls
 		}
@@ -86,6 +87,7 @@ write_caddyfile() {
 }
 
 $domains {
+	encode zstd gzip
 $(trojan_route)
 	reverse_proxy 127.0.0.1:8000
 }
