@@ -46,6 +46,18 @@
             Пользуйтесь им только на одном устройстве: при повторном нарушении ключ будет удалён без возможности создать новый.</p>
         </div>
       {% endfor %}
+      {% if sub_url and keys %}
+      <div class="card sub-link">
+        <h3>Ссылка для приложения</h3>
+        <p class="muted">Добавьте её один раз — приложение само подтянет ключ, покажет срок подписки и обновит всё, если ключ поменяется.</p>
+        <code>{{ sub_url }}</code>
+        <div class="row">
+          <a class="btn btn-sm" href="hiddify://import/{{ sub_url }}#{{ profile_title | urlencode }}">Открыть в Hiddify</a>
+          <a class="btn btn-sm btn-ghost" href="v2raytun://import/{{ sub_url }}">Открыть в v2RayTun</a>
+          <button class="btn btn-sm btn-ghost" type="button" data-copy="{{ sub_url }}">Скопировать</button>
+        </div>
+      </div>
+      {% endif %}
       <div class="keys">
         {% for k in keys %}
         <div class="card key spot">

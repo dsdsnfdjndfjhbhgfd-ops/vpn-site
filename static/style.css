@@ -634,12 +634,14 @@ p { margin: 0; }
 }
 .key img:hover { transform: scale(1.03); box-shadow: 0 20px 50px -10px rgba(124, 107, 255, 0.6); }
 .key h3 { font-size: 21px; }
-.key code {
+.key code, .sub-link code {
   display: block; margin: 12px 0 16px; padding: 12px 14px; border-radius: 12px;
   background: rgba(0, 0, 0, 0.35); border: 1px solid var(--line); font-size: 12px; word-break: break-all; color: var(--text-2);
   max-height: 84px; overflow: hidden;
 }
-.key .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.key .row, .sub-link .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.sub-link { margin-top: 20px; }
+.sub-link p { margin-top: 6px; }
 .key .key-type { font-size: 15px; font-weight: 500; }
 @media (max-width: 600px) { .key { grid-template-columns: 1fr; } .key img { margin: 0 auto; } }
 .notice h3 { font-size: 19px; }

@@ -48,6 +48,8 @@ RESTART_CMD = os.getenv("XRAY_RESTART_CMD", "systemctl restart xray").split()
 DATA_DIR = os.getenv("DATA_DIR", "/var/lib/vpn-site")
 DB = os.path.join(DATA_DIR, "site.db")
 SITE_NAME = os.getenv("SITE_NAME", "Tunnel")
+# Значок перед названием в приложениях (Hiddify, v2RayTun): «⚡ Tunnel · iphone»
+KEY_EMOJI = os.getenv("KEY_EMOJI", "⚡")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")
 MAX_KEYS = int(os.getenv("MAX_KEYS", "1"))
 # Один ключ — одно устройство. Раз в SHARE_CHECK_SEC сайт спрашивает у Xray, с каких IP
@@ -161,6 +163,10 @@ with connect() as _con:
     for _col in ("strikes", "revoked"):
         if _col not in _cols:
             _con.execute(f"ALTER TABLE users ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
+    # Секрет ссылки-подписки (/sub/<sub_token>); создаётся при первом заходе в кабинет
+    if "sub_token" not in _cols:
+        _con.execute("ALTER TABLE users ADD COLUMN sub_token TEXT")
+    _con.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_sub_token ON users(sub_token)")
 
 
 def now() -> int:
@@ -337,7 +343,32 @@ def make_trojan_link(cid: str, label: str) -> str | None:
     host = site.hostname
     return (f"trojan://{cid}@{s['IP']}:{site.port or 443}?security=tls&sni={host}&fp=chrome"
             f"&alpn=http%2F1.1&type=ws&host={host}&path={quote(s['TROJAN_PATH'], safe='')}"
-            f"#{quote(label + '-trojan')}")
+            f"#{quote(label)}")
+
+
+def profile_title() -> str:
+    return f"{KEY_EMOJI} {SITE_NAME}".strip()
+
+
+def key_label(name: str) -> str:
+    """Как ключ называется в приложении: «⚡ Tunnel · iphone»."""
+    return f"{profile_title()} · {name}"
+
+
+def key_link(k: dict) -> tuple[str, bool]:
+    """Ссылка ключа. Если включён Trojan (trojan.sh), выдаём только его: он идёт внутри
+    сайта и проходит там, где VLESS режут. Без Trojan — VLESS, как раньше."""
+    trojan = make_trojan_link(k["id"], key_label(k["name"]))
+    return (trojan or make_link(k["id"], key_label(k["name"]))), bool(trojan)
+
+
+def sub_token(con: sqlite3.Connection, user) -> str:
+    if user["sub_token"]:
+        return user["sub_token"]
+    with con:
+        con.execute("UPDATE users SET sub_token=? WHERE id=? AND sub_token IS NULL",
+                    (secrets.token_urlsafe(18), user["id"]))
+    return con.execute("SELECT sub_token FROM users WHERE id=?", (user["id"],)).fetchone()[0]
 
 
 def qr_svg(text: str) -> str:
@@ -729,19 +760,41 @@ def account():
     keys = []
     if is_active(user) and KEYS_ENABLED:
         for k in user_keys(user["id"]):
-            # Если включён Trojan (trojan.sh), выдаём только его: он идёт внутри сайта и
-            # проходит там, где VLESS режут. Без Trojan — VLESS, как раньше.
-            label = f"{SITE_NAME}-{k['name']}"
-            trojan = make_trojan_link(k["id"], label)
-            link = trojan or make_link(k["id"], label)
-            keys.append({**k, "link": link, "qr": qr_svg(link), "trojan": bool(trojan)})
+            link, trojan = key_link(k)
+            keys.append({**k, "link": link, "qr": qr_svg(link), "trojan": trojan})
     payments = con.execute("SELECT * FROM payments WHERE user_id=? AND status='succeeded' "
                            "ORDER BY created_at DESC LIMIT 10", (user["id"],)).fetchall()
     bans = [{"name": b["email"][len(prefix(user["id"])):],
              "minutes": max(1, -(-(b["until"] - now()) // 60))}
             for b in con.execute("SELECT * FROM key_bans WHERE user_id=?", (user["id"],))]
+    sub_url = f"{BASE_URL}/sub/{sub_token(con, user)}" if KEYS_ENABLED else None
     return render_template("account.html", user=user, active=is_active(user),
-                           keys=keys, payments=payments, bans=bans)
+                           keys=keys, payments=payments, bans=bans, sub_url=sub_url,
+                           profile_title=profile_title())
+
+
+@app.get("/sub/<token>")
+def subscription(token):
+    """Ссылка-подписка для Hiddify и v2RayTun: приложение само забирает отсюда ключи,
+    название и срок подписки и обновляет их. Ключи — только пока подписка активна."""
+    if len(token) < 16:
+        abort(404)
+    user = db().execute("SELECT * FROM users WHERE sub_token=?", (token,)).fetchone() or abort(404)
+    links = []
+    if KEYS_ENABLED and is_active(user) and not user["blocked"] and not user["revoked"]:
+        links = [key_link(k)[0] for k in user_keys(user["id"])]
+    title = profile_title()
+    resp = app.response_class(base64.b64encode("\n".join(links).encode()).decode(),
+                              mimetype="text/plain")
+    resp.headers["profile-title"] = "base64:" + base64.b64encode(title.encode()).decode()
+    # срок подписки: приложения показывают, сколько дней осталось
+    resp.headers["subscription-userinfo"] = (f"upload=0; download=0; total=0; "
+                                             f"expire={user['paid_until']}")
+    resp.headers["profile-update-interval"] = "6"
+    resp.headers["profile-web-page-url"] = f"{BASE_URL}/account"
+    resp.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(title)}"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.post("/keys")
